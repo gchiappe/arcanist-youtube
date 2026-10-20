@@ -1,0 +1,296 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "YouTube Audio for Arcanist",
+    "version": "1",
+    "description": "Brings the audio of YouTube videos, playlists, channels and YouTube Music albums (and other sites the administrator allows) into Arcanist libraries, as the user's uploads. Authenticate with Arcanist's Bearer token. Everything needs the UPLOAD permission; settings, tools and cookies are for administrators (changes need a recent authentication: reauthentication_required). Errors are problem details with a `code`. Enums are UPPER_SNAKE_CASE.",
+    "license": { "name": "AGPL-3.0-or-later", "identifier": "AGPL-3.0-or-later" }
+  },
+  "servers": [{ "url": "/ext/youtube/api/v1" }],
+  "security": [{ "bearer": [] }],
+  "paths": {
+    "/status": {
+      "get": {
+        "operationId": "Status",
+        "summary": "Whether the extension is ready (yt-dlp installed), the tools, ffmpeg, the formats possible now, the libraries the user can bring songs into and the settings.",
+        "responses": { "200": { "description": "Status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Status" } } } } }
+      }
+    },
+    "/inspect": {
+      "get": {
+        "operationId": "Inspect",
+        "summary": "What a link has, before downloading: a video's details and proposed tags, or a list's songs a page (100) at a time. Accepts any YouTube or YouTube Music link (also inside text).",
+        "parameters": [
+          { "name": "url", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "tab", "in": "query", "description": "For a channel: releases, videos, shorts, streams or playlists.", "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "description": "The nextCursor of the previous page.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Preview", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LinkPreview" } } } },
+          "400": { "description": "invalid_link, site_not_allowed" },
+          "422": { "description": "unavailable_video, sign_in_required, geo_blocked, live_not_ended, blocked_by_youtube, inspect_failed" }
+        }
+      }
+    },
+    "/preview": {
+      "post": {
+        "operationId": "PreviewLink",
+        "summary": "A link (valid 30 minutes) to 30 seconds of a video's audio as MP3, through the server, for an audio element.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["url"], "properties": { "url": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Link", "content": { "application/json": { "schema": { "type": "object", "properties": { "url": { "type": "string" } } } } } } }
+      },
+      "get": {
+        "operationId": "Preview",
+        "summary": "The preview itself (the ticket is the authorization). Needs ffmpeg.",
+        "security": [],
+        "parameters": [
+          { "name": "ticket", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "start", "in": "query", "description": "Seconds into the song.", "schema": { "type": "number" } }
+        ],
+        "responses": { "200": { "description": "Audio", "content": { "audio/mpeg": {} } } }
+      }
+    },
+    "/downloads": {
+      "post": {
+        "operationId": "Download",
+        "summary": "Brings a video, or songs of a list, into a library. Each song is the user's upload: it shows in myUploads with source \"youtube\".",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadRequest" } } } },
+        "responses": { "200": { "description": "The download", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadBatch" } } } } }
+      },
+      "get": {
+        "operationId": "Downloads",
+        "summary": "The user's downloads, newest first (kept 30 days).",
+        "responses": { "200": { "description": "Downloads", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/DownloadBatch" } } } } } }
+      },
+      "delete": { "operationId": "ClearDownloads", "summary": "Forgets the finished ones.", "responses": { "200": { "description": "How many" } } }
+    },
+    "/downloads/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": { "operationId": "DownloadById", "responses": { "200": { "description": "The download", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadBatch" } } } } } },
+      "delete": { "operationId": "RemoveDownload", "summary": "Forgets it (cancelling what is left). Nothing already in a library is touched.", "responses": { "204": { "description": "Gone" } } }
+    },
+    "/downloads/{id}/cancel": {
+      "post": {
+        "operationId": "CancelDownload",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "item", "in": "query", "description": "Only this song.", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "200": { "description": "The download" } }
+      }
+    },
+    "/downloads/{id}/retry": {
+      "post": {
+        "operationId": "RetryDownload",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "item", "in": "query", "description": "Only this song.", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "200": { "description": "The download" }, "409": { "description": "wrong_state" } }
+      }
+    },
+    "/downloads/events": {
+      "get": {
+        "operationId": "DownloadEvents",
+        "summary": "Server-sent events: an `event: batch` with the whole download (JSON) each time it changes. Read it with fetch to send the Bearer token.",
+        "responses": { "200": { "description": "Events", "content": { "text/event-stream": {} } } }
+      }
+    },
+    "/settings": {
+      "get": { "operationId": "Settings", "summary": "Administrators only.", "responses": { "200": { "description": "Settings", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } } } } },
+      "put": {
+        "operationId": "SetSettings",
+        "summary": "Administrators only, with a recent authentication.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Settings" } } } },
+        "responses": { "200": { "description": "Settings saved (normalized)" } }
+      }
+    },
+    "/tools/install": {
+      "post": {
+        "operationId": "InstallTools",
+        "summary": "Installs or updates yt-dlp and Deno (or the one named) from their official GitHub releases, checked against their published SHA-256. Administrators only, with a recent authentication.",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "tool": { "enum": ["YT_DLP", "DENO", null] } } } } } },
+        "responses": { "200": { "description": "The tools" }, "502": { "description": "tool_download_failed, tool_checksum_mismatch" } }
+      }
+    },
+    "/tools/check": { "post": { "operationId": "CheckTools", "summary": "Looks up the latest releases. Administrators only.", "responses": { "200": { "description": "The tools" } } } },
+    "/cookies": {
+      "put": {
+        "operationId": "SetCookies",
+        "summary": "The cookies of a YouTube session (cookies.txt, Netscape format, as plain text), for servers YouTube asks to confirm they are not a bot. Kept encrypted, never returned. Administrators only, with a recent authentication.",
+        "requestBody": { "required": true, "content": { "text/plain": {} } },
+        "responses": { "204": { "description": "Saved" }, "400": { "description": "invalid_cookies" } }
+      },
+      "delete": { "operationId": "RemoveCookies", "responses": { "204": { "description": "Removed" } } }
+    },
+    "/me": { "get": { "operationId": "Me", "summary": "The user's own settings.", "responses": { "200": { "description": "The user's settings", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MyYouTube" } } } } } } },
+    "/me/preferences": {
+      "put": {
+        "operationId": "SetMyPreferences",
+        "summary": "Whether the app plays each song as it arrives.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["playWhenDone"], "properties": { "playWhenDone": { "type": "boolean" } } } } } },
+        "responses": { "200": { "description": "Saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MyYouTube" } } } } }
+      }
+    },
+    "/me/cookies": {
+      "put": {
+        "operationId": "SetMyCookies",
+        "summary": "The user's own YouTube cookies (cookies.txt, Netscape format, as plain text), used for their links instead of the server's. Kept encrypted, never returned.",
+        "requestBody": { "required": true, "content": { "text/plain": {} } },
+        "responses": { "200": { "description": "Saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MyYouTube" } } } }, "400": { "description": "invalid_cookies" } }
+      },
+      "delete": { "operationId": "RemoveMyCookies", "responses": { "200": { "description": "Removed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MyYouTube" } } } } } }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } },
+    "schemas": {
+      "AudioFormat": { "enum": ["ORIGINAL", "OPUS", "MP3", "M4A", "FLAC"], "description": "ORIGINAL keeps YouTube's audio (Opus or AAC) without converting; the others need ffmpeg." },
+      "LinkKind": { "enum": ["VIDEO", "PLAYLIST", "MIX", "ALBUM", "CHANNEL", "ARTIST", "OTHER"] },
+      "SongTags": {
+        "type": "object",
+        "properties": {
+          "title": { "type": ["string", "null"] },
+          "artist": { "type": ["string", "null"] },
+          "album": { "type": ["string", "null"] },
+          "albumArtist": { "type": ["string", "null"] },
+          "year": { "type": ["integer", "null"] },
+          "trackNumber": { "type": ["integer", "null"] },
+          "genre": { "type": ["string", "null"] }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "properties": {
+          "ready": { "type": "boolean" },
+          "isAdmin": { "type": "boolean" },
+          "cookies": { "type": "boolean" },
+          "tools": { "type": "array", "items": { "type": "object" } },
+          "ffmpeg": { "type": "object", "properties": { "installed": { "type": "boolean" }, "version": { "type": ["string", "null"] } } },
+          "formats": { "type": "array", "items": { "$ref": "#/components/schemas/AudioFormat" } },
+          "libraries": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" } } } },
+          "settings": { "$ref": "#/components/schemas/Settings" },
+          "version": { "type": "string" }
+        }
+      },
+      "MyYouTube": {
+        "type": "object",
+        "required": ["hasCookies", "playWhenDone"],
+        "properties": {
+          "hasCookies": { "type": "boolean", "description": "The user has YouTube cookies of their own, used for their links instead of the server's." },
+          "playWhenDone": { "type": "boolean", "description": "The app asks the player to play each song as it is added to the library (arcanist:play)." }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "otherSites": { "type": "array", "items": { "type": "string" }, "description": "Domains besides YouTube." },
+          "concurrency": { "type": "integer", "minimum": 1, "maximum": 4 },
+          "autoUpdate": { "type": "boolean" },
+          "maxItems": { "type": "integer", "minimum": 1, "maximum": 5000 },
+          "defaultFormat": { "$ref": "#/components/schemas/AudioFormat" }
+        }
+      },
+      "LinkEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "index": { "type": "integer" },
+          "title": { "type": ["string", "null"] },
+          "uploader": { "type": ["string", "null"] },
+          "duration": { "type": ["number", "null"] },
+          "thumbnail": { "type": ["string", "null"], "description": "Through this server." },
+          "available": { "type": "boolean" },
+          "inLibrary": { "type": "boolean" },
+          "tags": { "$ref": "#/components/schemas/SongTags" }
+        }
+      },
+      "LinkPreview": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "The canonical link." },
+          "kind": { "$ref": "#/components/schemas/LinkKind" },
+          "id": { "type": ["string", "null"] },
+          "music": { "type": "boolean" },
+          "listUrl": { "type": ["string", "null"], "description": "A video opened inside a list: the list." },
+          "title": { "type": ["string", "null"] },
+          "uploader": { "type": ["string", "null"] },
+          "thumbnail": { "type": ["string", "null"] },
+          "avatar": { "type": ["string", "null"] },
+          "duration": { "type": ["number", "null"] },
+          "date": { "type": ["string", "null"], "format": "date" },
+          "views": { "type": ["integer", "null"] },
+          "entryCount": { "type": ["integer", "null"] },
+          "tags": { "$ref": "#/components/schemas/SongTags" },
+          "chapters": { "type": "integer" },
+          "tabs": { "type": ["array", "null"], "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } } },
+          "tab": { "type": ["string", "null"] },
+          "entries": { "type": ["array", "null"], "items": { "$ref": "#/components/schemas/LinkEntry" } },
+          "nextCursor": { "type": ["string", "null"] },
+          "truncated": { "type": "boolean", "description": "A mix, cut to its first 50 songs." },
+          "inLibrary": { "type": "boolean" }
+        }
+      },
+      "DownloadRequest": {
+        "type": "object",
+        "required": ["url", "libraryId"],
+        "properties": {
+          "url": { "type": "string" },
+          "libraryId": { "type": "string", "format": "uuid" },
+          "format": { "$ref": "#/components/schemas/AudioFormat" },
+          "quality": { "enum": ["BEST", "HIGH", "MEDIUM"] },
+          "embedArtwork": { "type": "boolean", "default": true },
+          "squareArtwork": { "type": "boolean", "default": true },
+          "splitChapters": { "type": "boolean", "default": false },
+          "numberTracks": { "type": "boolean", "description": "Default: true for albums." },
+          "tab": { "type": "string" },
+          "all": { "type": "boolean", "description": "Every song of the list but those in exclude (the server lists them)." },
+          "entries": { "type": "array", "items": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" }, "url": { "type": "string" }, "index": { "type": "integer" }, "title": { "type": "string" }, "uploader": { "type": "string" }, "duration": { "type": "number" } } } },
+          "exclude": { "type": "array", "items": { "type": "string" } },
+          "tags": { "$ref": "#/components/schemas/SongTags" },
+          "album": { "type": "string" },
+          "albumArtist": { "type": "string" },
+          "wholeList": { "type": "boolean", "description": "A video opened inside a list: take the list." },
+          "title": { "type": "string", "description": "What the download is called in the queue." }
+        }
+      },
+      "DownloadItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "videoId": { "type": "string" },
+          "url": { "type": "string" },
+          "index": { "type": ["integer", "null"] },
+          "title": { "type": ["string", "null"] },
+          "status": { "enum": ["QUEUED", "DOWNLOADING", "CONVERTING", "IMPORTING", "ADDED", "DUPLICATE", "FAILED", "CANCELLED"] },
+          "progress": { "type": ["number", "null"] },
+          "speed": { "type": ["number", "null"], "description": "Bytes per second." },
+          "eta": { "type": ["integer", "null"], "description": "Seconds left." },
+          "errorCode": { "type": ["string", "null"] },
+          "tags": { "$ref": "#/components/schemas/SongTags" },
+          "fileName": { "type": ["string", "null"] },
+          "trackId": { "type": ["string", "null"] },
+          "files": { "type": "integer" }
+        }
+      },
+      "DownloadBatch": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "url": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/LinkKind" },
+          "title": { "type": ["string", "null"] },
+          "libraryId": { "type": "string", "format": "uuid" },
+          "libraryName": { "type": ["string", "null"] },
+          "status": { "enum": ["LISTING", "ACTIVE", "DONE", "FAILED", "CANCELLED"] },
+          "errorCode": { "type": ["string", "null"] },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/DownloadItem" } },
+          "total": { "type": "integer" },
+          "finished": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

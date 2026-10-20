@@ -1,0 +1,8 @@
+bin/
+obj/
+artifacts/
+.vs/
+*.user
+ui/node_modules/
+# Built from ui/ by npm run build (and pack.sh).
+src/Arcanist.YouTube/wwwroot/

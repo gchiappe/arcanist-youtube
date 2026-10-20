@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The extension builds against Arcanist, checked out beside it as ../../Arcanist.
+      - uses: actions/checkout@v4
+        with:
+          path: ArcanistExtensions/youtube
+      - uses: actions/checkout@v4
+        with:
+          repository: linkfast/arcanist
+          ref: ${{ vars.ARCANIST_REF || 'main' }}
+          path: Arcanist
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: ArcanistExtensions/youtube/global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: ArcanistExtensions/youtube/ui/package-lock.json
+      - name: Build the app
+        working-directory: ArcanistExtensions/youtube/ui
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Test
+        working-directory: ArcanistExtensions/youtube
+        run: dotnet test --project tests/Arcanist.YouTube.Tests --artifacts-path artifacts/build
+      - name: Package
+        working-directory: ArcanistExtensions/youtube
+        run: sh pack.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: ArcanistExtensions/youtube/artifacts/arcanist-youtube-*.zip*

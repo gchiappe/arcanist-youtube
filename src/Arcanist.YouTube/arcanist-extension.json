@@ -1,0 +1,34 @@
+{
+  "id": "youtube",
+  "name": "YouTube Audio",
+  "version": "0.2.0-alpha.2",
+  "description": "Brings the audio of YouTube videos, playlists, channels and YouTube Music albums into your libraries, with yt-dlp.",
+  "author": "gchiappe",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/gchiappe/arcanist-youtube",
+  "minApiVersion": 1,
+  "assembly": "Arcanist.YouTube.dll",
+  "apps": [
+    {
+      "id": "youtube",
+      "name": "From YouTube",
+      "names": {
+        "es": "Desde YouTube"
+      },
+      "description": "Paste a link to a video, playlist, channel or album and add its audio to your library.",
+      "descriptions": {
+        "es": "Pega un enlace a un vídeo, lista, canal o álbum y añade su audio a tu biblioteca."
+      },
+      "path": "/ext/youtube/",
+      "icon": "/ext/youtube/icon.svg",
+      "permissions": [
+        "UPLOAD"
+      ],
+      "width": 760,
+      "height": 680
+    }
+  ],
+  "adminPage": {
+    "icon": "/ext/youtube/icon.svg"
+  }
+}

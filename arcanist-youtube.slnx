@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Arcanist.YouTube/Arcanist.YouTube.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Arcanist.YouTube.Tests/Arcanist.YouTube.Tests.csproj" />
+    <Project Path="tests/FakeYtDlp/FakeYtDlp.csproj" />
+  </Folder>
+</Solution>

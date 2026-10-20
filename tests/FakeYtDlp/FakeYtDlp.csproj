@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Stands in for yt-dlp in the tests: answers from a catalog the test writes, never reaching the internet. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>yt-dlp-fake</AssemblyName>
+  </PropertyGroup>
+
+</Project>

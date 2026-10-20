@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Arcanist.YouTube</RootNamespace>
+    <!-- The web app, built by the ui/ project (npm run build) into wwwroot/. -->
+    <UiRoot>$(MSBuildThisFileDirectory)wwwroot\</UiRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Provided by the server at run time, as for any extension. -->
+    <ProjectReference Include="$(ArcanistRoot)src\Arcanist.Extensibility\Arcanist.Extensibility.csproj" Private="false" ExcludeAssets="runtime;native;contentfiles;build" />
+    <ProjectReference Include="$(ArcanistRoot)src\Arcanist.Core\Arcanist.Core.csproj" Private="false" ExcludeAssets="runtime;native;contentfiles;build" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="arcanist-extension.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

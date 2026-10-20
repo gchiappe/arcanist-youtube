@@ -1,0 +1,20 @@
+<Project>
+
+  <PropertyGroup>
+    <Product>YouTube Audio for Arcanist</Product>
+    <Version>0.2.0-alpha.2</Version>
+    <Authors>gchiappe</Authors>
+    <Copyright>Copyright (C) 2026 gchiappe and contributors</Copyright>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/gchiappe/arcanist-youtube</RepositoryUrl>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- The Arcanist checkout the extension builds against (its SDK and server come from the server at run time). -->
+    <ArcanistRoot Condition="'$(ArcanistRoot)' == ''">$(MSBuildThisFileDirectory)..\..\Arcanist\</ArcanistRoot>
+    <!-- Never build Arcanist's native libraries for the extension. -->
+    <SkipNativeBuild>true</SkipNativeBuild>
+  </PropertyGroup>
+
+</Project>
