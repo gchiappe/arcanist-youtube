@@ -35,7 +35,9 @@ player that opened it to play it after what is playing (Arcanist's `arcanist:pla
 Paste one or more links: videos (`watch`, `youtu.be`, shorts, live), playlists, mixes, channels (and their tabs:
 releases, videos…), YouTube Music songs, albums and artists, or text with links in it. The app shows what each one
 has, lets you listen to 30 seconds, edit the tags, pick songs of a list (or all of them), and choose the format, the
-library and the cover. Downloads go on in the server; their progress shows live.
+library and the cover. Downloads go on in the server; their progress shows live. Opened from a player, the list of
+downloads plays what is already in the library (one song, a list, or everything finished); clearing the finished ones
+asks first.
 
 ## API
 
@@ -43,7 +45,8 @@ The app is a client of the extension's REST API, under `/ext/youtube/api/v1` wit
 [`openapi.json`](ui/public/openapi.json) (served at `/ext/youtube/api/v1/openapi.json`). In short:
 
 - `GET status`, `GET inspect?url=&tab=&after=`
-- `POST downloads` (one video with its `tags`, chosen `entries` of a list, or `all` but `exclude`), `GET downloads`,
+- `POST downloads` (one video with its `tags`, chosen `entries` of a list, or `all` but `exclude`), `GET downloads`
+  (each song in the library says the tracks it became, `trackIds`, once the library catalogues them),
   `GET downloads/{id}`, `POST downloads/{id}/cancel|retry`, `DELETE downloads/{id}`, `GET downloads/events` (SSE)
 - `POST preview` → a link to 30 seconds of audio
 - each user's: `GET me`, `PUT me/preferences`, `PUT|DELETE me/cookies`

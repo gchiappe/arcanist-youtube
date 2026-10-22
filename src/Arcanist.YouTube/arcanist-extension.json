@@ -11,9 +11,9 @@
   "apps": [
     {
       "id": "youtube",
-      "name": "From YouTube",
+      "name": "YouTube Import",
       "names": {
-        "es": "Desde YouTube"
+        "es": "Importar desde YouTube"
       },
       "description": "Paste a link to a video, playlist, channel or album and add its audio to your library.",
       "descriptions": {

@@ -6,7 +6,7 @@ import { errorText, t } from "./i18n";
 import { Icon } from "./icons";
 import { LinkCard, chosenCount, initFrom, newLink, requestFor, type LinkState } from "./link";
 import { Options, loadOptions, saveOptions, type Choices } from "./options";
-import { Queue } from "./queue";
+import { Queue, awaitsTracks, tracksOf } from "./queue";
 import { MySettings } from "./settings";
 import "./styles.css";
 
@@ -59,14 +59,17 @@ function App() {
   useEffect(() => {
     const off = host.onChange(() => {
       document.documentElement.lang = host.language;
+      document.title = t("title");
       redraw((n) => n + 1);
     });
+    document.title = t("title");
     void (async () => {
       if (!(await host.start())) {
         setReady("signed-out");
         return;
       }
       document.documentElement.lang = host.language;
+      document.title = t("title");
       try {
         await refreshStatus();
         setBatches(await api.downloads());
@@ -99,9 +102,17 @@ function App() {
 
   useEffect(() => saveOptions(choices), [choices]);
 
+  // Songs in the library whose tracks are not known yet (a scan takes a while): reading the list looks them up.
+  const awaiting = batches.some((b) => b.items.some(awaitsTracks));
+  useEffect(() => {
+    if (ready !== "ready" || !awaiting) return;
+    const timer = setInterval(() => void api.downloads().then(setBatches).catch(() => undefined), 8000);
+    return () => clearInterval(timer);
+  }, [ready, awaiting]);
+
   // Each song that arrives (and becomes a track of the library) goes to the player, when the user wants it.
   useEffect(() => {
-    const tracks = batches.flatMap((b) => b.items).filter((i) => i.status === "ADDED" && i.trackId).map((i) => i.trackId!);
+    const tracks = batches.flatMap((b) => b.items).filter((i) => i.status === "ADDED").flatMap(tracksOf);
     if (handed.current === null) {
       if (ready === "ready") handed.current = new Set(tracks);
       return;
@@ -202,7 +213,7 @@ function App() {
     <div class="app">
       <Header>
         {me && (
-          <button class="btn ghost icon" title={t("mine.title")} aria-label={t("mine.title")} aria-expanded={mine} onClick={() => setMine((v) => !v)}>
+          <button class="btn ghost icon" title={t("mine.title")} aria-label={t("mine.title")} aria-haspopup="dialog" onClick={() => setMine(true)}>
             <Icon name="settings" />
           </button>
         )}
@@ -281,7 +292,7 @@ function App() {
         </>
       )}
 
-      <Queue batches={batches} setBatches={setBatches} show={show} />
+      <Queue batches={batches} setBatches={setBatches} show={show} canPlay={host.embedded} />
 
       <p class="footer">
         {t("legal")} · v{status?.version}

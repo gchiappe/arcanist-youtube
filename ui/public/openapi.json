@@ -270,8 +270,10 @@
           "errorCode": { "type": ["string", "null"] },
           "tags": { "$ref": "#/components/schemas/SongTags" },
           "fileName": { "type": ["string", "null"] },
-          "trackId": { "type": ["string", "null"] },
-          "files": { "type": "integer" }
+          "trackId": { "type": ["string", "null"], "description": "The track of its only file, once catalogued." },
+          "files": { "type": "integer" },
+          "contentHashes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "The audio of each file it put into the library (Arcanist's content hash)." },
+          "trackIds": { "type": ["array", "null"], "items": { "type": ["string", "null"], "format": "uuid" }, "description": "The track each of those files became, in the same order; null until the library catalogues it (GET downloads looks again)." }
         }
       },
       "DownloadBatch": {

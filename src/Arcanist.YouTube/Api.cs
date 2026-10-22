@@ -97,7 +97,13 @@ public static class Api
 
         api.MapPost("/downloads", DownloadAsync);
 
-        api.MapGet("/downloads", (AccessGuard guard, DownloadQueue queue) => queue.Of(guard.Permission(Permissions.Upload).UserId));
+        // The songs whose tracks were still unknown are looked up first (their library may have been scanned since).
+        api.MapGet("/downloads", async (AccessGuard guard, DownloadQueue queue, CancellationToken ct) =>
+        {
+            var user = guard.Permission(Permissions.Upload).UserId;
+            await queue.ResolveTracksAsync(user, ct);
+            return queue.Of(user);
+        });
 
         api.MapGet("/downloads/{id:guid}", (Guid id, AccessGuard guard, DownloadQueue queue) =>
             queue.Find(guard.Permission(Permissions.Upload).UserId, id) ?? throw new ArcanistException.NotFound());

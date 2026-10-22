@@ -110,8 +110,13 @@ export interface DownloadItem {
   errorCode?: string;
   tags?: SongTags;
   fileName?: string;
+  /** The track of its only file, once catalogued. */
   trackId?: string;
   files: number;
+  /** The audio of each file it put into the library. */
+  contentHashes?: string[];
+  /** The track each of those files became (same order; null until the library catalogues it). */
+  trackIds?: (string | null)[];
   updatedAt: string;
 }
 

@@ -1,23 +1,18 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { api, ApiError, type MyYouTube } from "./api";
+import { Dialog } from "./dialog";
 import { errorText, t } from "./i18n";
 import { Icon } from "./icons";
 import type { Toast } from "./main";
 
 /**
  * The user's own settings: play each song when it arrives, and YouTube cookies of their own (used for their links
- * instead of the server's, never shown back).
+ * instead of the server's, never shown back). In a dialog over the app.
  */
 export function MySettings(props: { me: MyYouTube; onChange: (me: MyYouTube) => void; onClose: () => void; show: (toast: Toast) => void }) {
   const { me, onChange, onClose, show } = props;
   const [cookies, setCookies] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    addEventListener("keydown", close);
-    return () => removeEventListener("keydown", close);
-  }, [onClose]);
 
   const run = async (action: () => Promise<MyYouTube>, done?: string) => {
     setBusy(true);
@@ -36,14 +31,15 @@ export function MySettings(props: { me: MyYouTube; onChange: (me: MyYouTube) => 
   };
 
   return (
-    <div class="card" role="dialog" aria-label={t("mine.title")}>
-      <div class="row">
-        <strong class="grow">{t("mine.title")}</strong>
-        <button class="btn ghost icon" title={t("close")} aria-label={t("close")} onClick={onClose}>
-          <Icon name="x" />
+    <Dialog
+      title={t("mine.title")}
+      onClose={onClose}
+      actions={
+        <button type="button" class="btn" onClick={onClose}>
+          {t("done")}
         </button>
-      </div>
-
+      }
+    >
       <label class="check">
         <input
           type="checkbox"
@@ -94,6 +90,6 @@ export function MySettings(props: { me: MyYouTube; onChange: (me: MyYouTube) => 
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

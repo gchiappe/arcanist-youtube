@@ -187,7 +187,9 @@ public sealed class YouTubeTests : IAsyncDisposable
         Assert.Equal("RUNNING", extension.GetProperty("status").GetString());
 
         var app = Assert.Single((await _admin.GetFromJsonAsync<List<JsonElement>>("/rest/v1/extension-apps?language=es", ArcanistFactory.Json, Cancel))!);
-        Assert.Equal(("Desde YouTube", "/ext/youtube/"), (app.GetProperty("name").GetString(), app.GetProperty("url").GetString()));
+        Assert.Equal(("Importar desde YouTube", "/ext/youtube/"), (app.GetProperty("name").GetString(), app.GetProperty("url").GetString()));
+        var english = Assert.Single((await _admin.GetFromJsonAsync<List<JsonElement>>("/rest/v1/extension-apps?language=en", ArcanistFactory.Json, Cancel))!);
+        Assert.Equal("YouTube Import", english.GetProperty("name").GetString());
 
         // Its web app, at its address with or without the slash.
         var client = _factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -238,7 +240,7 @@ public sealed class YouTubeTests : IAsyncDisposable
         JsonElement upload;
         while (true)
         {
-            upload = (await _admin.GraphQLAsync("query { myUploads { items { name status source track { title album { title } } } } }"))
+            upload = (await _admin.GraphQLAsync("query { myUploads { items { name status source track { id title album { title } } } } }"))
                 .GetProperty("data").GetProperty("myUploads").GetProperty("items")[0];
             if (upload.GetProperty("status").GetString() == "ADDED")
                 break;
@@ -248,6 +250,19 @@ public sealed class YouTubeTests : IAsyncDisposable
 
         Assert.Equal(("Band Name - Great Song.wav", "youtube", "Great Song", "Singles"), (upload.GetProperty("name").GetString(), upload.GetProperty("source").GetString(),
             upload.GetProperty("track").GetProperty("title").GetString(), upload.GetProperty("track").GetProperty("album").GetProperty("title").GetString()));
+
+        // The download learns the track it became (the app plays it from its history).
+        var trackId = upload.GetProperty("track").GetProperty("id").GetString();
+        var batchId = batch.GetProperty("id").GetString()!;
+        // Reading the list looks the tracks up at once (no need to wait for the extension's own search).
+        var added = (await GetAsync(_admin, "downloads")).EnumerateArray().Single(b => b.GetProperty("id").GetString() == batchId).GetProperty("items")[0];
+        Assert.Equal((trackId, trackId, 1), (added.GetProperty("trackIds")[0].GetString(), added.GetProperty("trackId").GetString(),
+            added.GetProperty("contentHashes").GetArrayLength()));
+
+        // The same song again is a duplicate that knows its track at once.
+        var (_, again) = await SendAsync(_admin, HttpMethod.Post, "downloads", new { url = "https://youtu.be/abcdefghijk", libraryId = library });
+        var duplicate = (await WaitAsync(_admin, again.GetProperty("id").GetString()!)).GetProperty("items")[0];
+        Assert.Equal(("DUPLICATE", trackId), (duplicate.GetProperty("status").GetString(), duplicate.GetProperty("trackIds")[0].GetString()));
 
         // Seen again, it is marked as already in the library.
         Assert.True((await GetAsync(_admin, "inspect?url=" + Uri.EscapeDataString("https://www.youtube.com/watch?v=abcdefghijk"))).GetProperty("inLibrary").GetBoolean());

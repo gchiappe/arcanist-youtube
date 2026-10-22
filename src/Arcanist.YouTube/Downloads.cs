@@ -69,6 +69,9 @@ public sealed record DownloadSettings(
 /// <summary>One song (one video) of a download.</summary>
 /// <param name="Tags">The tags it is saved with (those proposed, or the user's for a single video).</param>
 /// <param name="Files">How many files it gave (more than one when split at its chapters).</param>
+/// <param name="TrackId">The track of its only file, once the library has catalogued it (as before 0.3; see <paramref name="TrackIds"/>).</param>
+/// <param name="ContentHashes">The audio of each file it put into the library (Arcanist's <c>ContentHash</c>), to find their tracks.</param>
+/// <param name="TrackIds">The track each of those files became (same order; null until the library catalogues it): the app plays them.</param>
 public sealed record DownloadItem(
     Guid Id,
     string VideoId,
@@ -86,7 +89,16 @@ public sealed record DownloadItem(
     string? FileName,
     Guid? TrackId,
     int Files,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    IReadOnlyList<string>? ContentHashes = null,
+    IReadOnlyList<Guid?>? TrackIds = null)
+{
+    /// <summary>In the library, but some of its files are not catalogued yet (their tracks are still unknown).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool AwaitsTracks =>
+        Status is ItemStatus.Added or ItemStatus.Duplicate && ContentHashes is { Count: > 0 } hashes
+        && (TrackIds is not { } tracks || tracks.Count != hashes.Count || tracks.Any(t => t is null));
+}
 
 /// <summary>What one link brought: one song, or many from a list.</summary>
 public sealed record DownloadBatch(
@@ -352,29 +364,87 @@ public sealed class DownloadQueue(
         return changed;
     }
 
-    /// <summary>Looks for the track of an uploaded file for three minutes, while its library is scanned.</summary>
-    private async Task FindTrackAsync(Guid batchId, Guid itemId, string contentHash, CancellationToken stopping)
+    /// <summary>Looks for the tracks of an item's files for three minutes, while its library is scanned.</summary>
+    private async Task FindTracksAsync(Guid batchId, Guid itemId, CancellationToken stopping)
     {
         try
         {
             for (var attempt = 0; attempt < 36; attempt++)
             {
                 await Task.Delay(TimeSpan.FromSeconds(5), stopping);
-                using var scope = scopes.CreateScope();
-                await using var db = scope.ServiceProvider.GetRequiredService<IArcanistDbContextFactory>().CreateDbContext();
-                var track = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                    db.MediaFiles.Where(f => f.ContentHash == contentHash && f.MissingSince == null).Select(f => (Guid?)f.TrackId), stopping);
-                if (track is not null)
-                {
-                    UpdateItem(batchId, itemId, i => i with { TrackId = track }, save: true);
+                DownloadBatch? batch;
+                lock (_gate)
+                    batch = Batches.FirstOrDefault(b => b.Id == batchId);
+                if (batch?.Items.FirstOrDefault(i => i.Id == itemId) is not { AwaitsTracks: true } item)
                     return;
-                }
+                if (!await ResolveAsync(batch.LibraryId, [item], stopping))
+                    continue;
+                lock (_gate)
+                    if (Batches.FirstOrDefault(b => b.Id == batchId)?.Items.FirstOrDefault(i => i.Id == itemId) is not { AwaitsTracks: true })
+                        return;
             }
         }
         catch (Exception e) when (e is OperationCanceledException or InvalidOperationException)
         {
-            // The server stops, or the database is changing: the song is in the library all the same.
+            // The server stops, or the database is changing: the songs are in the library all the same.
         }
+    }
+
+    /// <summary>
+    /// The tracks of this user's songs that are in their libraries but were not catalogued yet when last seen (a slow
+    /// scan, a restart): looked up once, when the app reads its downloads.
+    /// </summary>
+    public async Task ResolveTracksAsync(Guid user, CancellationToken cancellationToken)
+    {
+        List<(Guid Library, DownloadItem Item)> waiting;
+        lock (_gate)
+            waiting = Batches.Where(b => b.UserId == user)
+                .SelectMany(b => b.Items.Where(i => i.AwaitsTracks).Select(i => (b.LibraryId, i))).Take(500).ToList();
+        try
+        {
+            foreach (var library in waiting.GroupBy(w => w.Library))
+                await ResolveAsync(library.Key, library.Select(w => w.Item).ToList(), cancellationToken);
+        }
+        catch (InvalidOperationException e)
+        {
+            logger.LogDebug(e, "The tracks of the downloads could not be looked up now");
+        }
+    }
+
+    /// <summary>Finds the tracks of these items' files in their library, by their audio; true when it found any.</summary>
+    private async Task<bool> ResolveAsync(Guid libraryId, IReadOnlyList<DownloadItem> items, CancellationToken cancellationToken)
+    {
+        var hashes = items.SelectMany(i => i.ContentHashes ?? []).Distinct(StringComparer.Ordinal).ToList();
+        if (hashes.Count == 0)
+            return false;
+        using var scope = scopes.CreateScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<IArcanistDbContextFactory>().CreateDbContext();
+        var found = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            db.MediaFiles.Where(f => hashes.Contains(f.ContentHash) && f.MissingSince == null && f.LibrarySource.LibraryId == libraryId)
+                .Select(f => new { f.ContentHash, f.TrackId }), cancellationToken);
+        if (found.Count == 0)
+            return false;
+        var tracks = found.GroupBy(f => f.ContentHash, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Min(f => f.TrackId), StringComparer.Ordinal);
+
+        var any = false;
+        foreach (var item in items)
+        {
+            var known = item.ContentHashes!.Select((hash, i) => tracks.TryGetValue(hash, out var track) ? track : item.TrackIds?.ElementAtOrDefault(i)).ToList();
+            if (known.SequenceEqual(item.TrackIds ?? []))
+                continue;
+            any = true;
+            var batchId = BatchOf(item.Id);
+            if (batchId is not null)
+                UpdateItem(batchId.Value, item.Id, i => i with { TrackIds = known, TrackId = known.Count == 1 ? known[0] : i.TrackId }, save: true);
+        }
+
+        return any;
+    }
+
+    private Guid? BatchOf(Guid itemId)
+    {
+        lock (_gate)
+            return Batches.FirstOrDefault(b => b.Items.Any(i => i.Id == itemId))?.Id;
     }
 
     private void UpdateItem(Guid batchId, Guid itemId, Func<DownloadItem, DownloadItem> change, bool save)
@@ -606,6 +676,7 @@ public sealed class DownloadQueue(
             var maintenance = services.GetRequiredService<DatabaseMaintenance>();
             UploadResult? last = null;
             var duplicates = 0;
+            var results = new List<UploadResult>();
             foreach (var song in songs)
             {
                 try
@@ -626,6 +697,7 @@ public sealed class DownloadQueue(
                     last = await uploads.UploadAsync(access, batch.LibraryId, name, stream, Source, token);
                 }
 
+                results.Add(last);
                 if (last.Status == UploadStatus.Duplicate)
                     duplicates++;
             }
@@ -635,13 +707,15 @@ public sealed class DownloadQueue(
                 Status = duplicates == songs.Count ? ItemStatus.Duplicate : ItemStatus.Added,
                 FileName = songs.Count == 1 ? last?.Path ?? Path.GetFileName(songs[0].File) : null,
                 TrackId = songs.Count == 1 ? last?.TrackId : null,
+                ContentHashes = results.Select(r => r.ContentHash).ToList(),
+                TrackIds = results.Select(r => r.TrackId).ToList(),
                 Files = songs.Count,
                 Progress = null,
             }, save: true);
             // A new song becomes a track once its library is scanned (some seconds later): the app learns it then, to
             // play it or open it.
-            if (songs.Count == 1 && last is { TrackId: null, Status: not UploadStatus.Duplicate })
-                _ = FindTrackAsync(batch.Id, item.Id, last.ContentHash, stopping);
+            if (results.Any(r => r.TrackId is null))
+                _ = FindTracksAsync(batch.Id, item.Id, stopping);
         }
         catch (OperationCanceledException) when (!stopping.IsCancellationRequested)
         {
