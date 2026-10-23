@@ -485,6 +485,10 @@ public sealed class YouTubeTests : IAsyncDisposable
         var page = await _admin.GetFromJsonAsync<JsonElement>("/rest/v1/extensions/youtube/admin?language=es", ArcanistFactory.Json, Cancel);
         Assert.Equal(["tools", "settings", "cookies", "legal"], page.GetProperty("sections").EnumerateArray().Select(s => s.GetProperty("id").GetString()));
         Assert.Equal("Herramientas", page.GetProperty("sections")[0].GetProperty("title").GetString());
+        // Deno is missing here: the panel offers to install it right after the extension starts.
+        var setup = page.GetProperty("setup");
+        Assert.Equal("install", setup.GetProperty("action").GetString());
+        Assert.Contains("Deno", Assert.Single(setup.GetProperty("items").EnumerateArray()).GetString());
 
         var saved = await _admin.PutAsJsonAsync("/rest/v1/extensions/youtube/admin",
             new { values = new { otherSites = "https://Example.org/x\nyoutube.com", concurrency = 9, maxItems = 20, autoUpdate = false, defaultFormat = "Mp3" } },

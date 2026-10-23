@@ -15,10 +15,13 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
         var t = Texts.For(context.Language);
         var current = settings.Current;
         var toolBlocks = new List<AdminBlock>();
+        var missing = new List<string>();
         foreach (var kind in Enum.GetValues<ToolKind>())
         {
             var status = await tools.StatusAsync(kind, cancellationToken);
             var name = kind == ToolKind.YtDlp ? "yt-dlp" : "Deno";
+            if (!status.Installed)
+                missing.Add(t.ToolItem(kind));
             toolBlocks.Add(status.Installed
                 ? AdminBlock.Status(name,
                     status.UpdateAvailable ? t.UpdateTo(status.Version!, status.Latest!) : $"{status.Version} · {t.Source(status.Source)}",
@@ -52,7 +55,11 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
                 AdminBlock.Field("cookies", t.CookiesField, AdminFieldType.TextArea, "", t.CookiesFieldHelp, placeholder: "# Netscape HTTP Cookie File"),
             ], cookies.Present ? [new AdminAction("removeCookies", t.RemoveCookies, AdminActionStyle.Destructive, t.RemoveCookiesConfirm)] : null),
             new AdminSection("legal", t.LegalTitle, null, [AdminBlock.Notice(t.Legal, AdminTone.Warning)]),
-        ]);
+        ])
+        {
+            // Offered by the panel right after installing the extension, with the administrator's consent.
+            Setup = missing.Count == 0 ? null : new AdminSetup(t.SetupTitle, t.SetupDescription, missing, "install", t.InstallNow),
+        };
     }
 
     public Task<AdminPageResult> SaveAsync(AdminPageContext context, IReadOnlyDictionary<string, JsonElement> values, CancellationToken cancellationToken)
@@ -140,6 +147,14 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
             _ => S("del sistema", "from the system"),
         };
         public string Install => S("Instalar o actualizar", "Install or update");
+        public string SetupTitle => S("Instalar las herramientas de YouTube Audio", "Install YouTube Audio's tools");
+        public string SetupDescription => S(
+            "Para traer audio, la extensión necesita estos programas. Se descargan de sus publicaciones oficiales, se comprueban con su SHA-256 y se guardan en la carpeta de la extensión; se actualizan solos si lo permites en sus ajustes.",
+            "To bring audio, the extension needs these programs. They are downloaded from their official releases, checked with their SHA-256 and kept in the extension's folder; they update by themselves if its settings allow.");
+        public string InstallNow => S("Instalar ahora", "Install now");
+        public string ToolItem(ToolKind kind) => kind == ToolKind.YtDlp
+            ? S("yt-dlp: trae el audio (github.com/yt-dlp/yt-dlp)", "yt-dlp: brings the audio (github.com/yt-dlp/yt-dlp)")
+            : S("Deno: le permite leer YouTube por completo (github.com/denoland/deno)", "Deno: lets it read YouTube fully (github.com/denoland/deno)");
         public string Check => S("Buscar actualizaciones", "Check for updates");
         public string Installed => S("Herramientas al día", "Tools up to date");
         public string InstallFailed(string code) => S($"No se pudieron instalar ({code})", $"They could not be installed ({code})");
