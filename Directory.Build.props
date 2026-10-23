@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <Product>YouTube Audio for Arcanist</Product>
-    <Version>0.3.0-alpha.1</Version>
+    <Version>0.4.0-alpha.1</Version>
     <Authors>gchiappe</Authors>
     <Copyright>Copyright (C) 2026 gchiappe and contributors</Copyright>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>

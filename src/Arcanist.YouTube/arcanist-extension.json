@@ -1,7 +1,7 @@
 {
   "id": "youtube",
   "name": "YouTube Audio",
-  "version": "0.3.0-alpha.1",
+  "version": "0.4.0-alpha.1",
   "description": "Brings the audio of YouTube videos, playlists, channels and YouTube Music albums into your libraries, with yt-dlp.",
   "author": "gchiappe",
   "license": "AGPL-3.0-or-later",
