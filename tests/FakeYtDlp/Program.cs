@@ -25,6 +25,10 @@ var catalog = JsonNode.Parse(File.ReadAllText(catalogFile))!.AsObject();
 // Every call is written down, for the tests to check what was asked.
 File.AppendAllText(catalogFile + ".calls", string.Join(" ", arguments) + Environment.NewLine);
 
+// Searches (ytsearchN:…) answer with the catalog's "search" entry, whatever is searched.
+if (url.StartsWith("ytsearch", StringComparison.Ordinal))
+    url = "search";
+
 if (catalog[url] is not JsonObject entry)
 {
     Console.Error.WriteLine($"ERROR: [youtube] {url}: Video unavailable");
@@ -60,9 +64,10 @@ if (arguments.Contains("-J"))
     return 0;
 }
 
-// A download: progress, the file, and where it is.
-var file = entry["file"]!.GetValue<string>();
-var output = Option("-o")!.Replace("%(ext)s", "wav");
+// A download: progress, the file, and where it is. A video (its picture asked for) is the entry's "video" (an MP4).
+var video = Option("-f")?.StartsWith("bv", StringComparison.Ordinal) == true || Option("-f")?.StartsWith("b[ext=mp4]", StringComparison.Ordinal) == true;
+var file = entry[video ? "video" : "file"]!.GetValue<string>();
+var output = Option("-o")!.Replace("%(ext)s", video ? "mp4" : "wav");
 var delay = entry["delayMs"]?.GetValue<int>() ?? 0;
 var total = new FileInfo(file).Length;
 var template = arguments.FirstOrDefault(a => a.StartsWith("download:", StringComparison.Ordinal))?["download:".Length..] ?? "";

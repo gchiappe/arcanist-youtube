@@ -8,6 +8,7 @@ import { LinkCard, chosenCount, initFrom, newLink, requestFor, type LinkState } 
 import { Options, loadOptions, saveOptions, type Choices } from "./options";
 import { Queue, awaitsTracks, tracksOf } from "./queue";
 import { MySettings } from "./settings";
+import { VideoFinder, videoTrack } from "./video";
 import "./styles.css";
 
 /** Links in pasted text (the server checks them again). */
@@ -36,6 +37,8 @@ function App() {
   const [sending, setSending] = useState(false);
   const [me, setMe] = useState<MyYouTube | null>(null);
   const [mine, setMine] = useState(false);
+  /** A library song whose music video is looked for (opened from a player's song menu). */
+  const [findFor, setFindFor] = useState<string | null>(videoTrack());
   /** Songs already handed to the player, or there before the app opened (never played again). */
   const handed = useRef<Set<string> | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -235,7 +238,20 @@ function App() {
         </div>
       )}
 
-      {!toolsMissing && status && (
+      {!toolsMissing && status && findFor && (
+        <VideoFinder
+          trackId={findFor}
+          status={status}
+          show={show}
+          onAdded={(batch) => setBatches((current) => [batch, ...current.filter((b) => b.id !== batch.id)])}
+          onBack={() => {
+            setFindFor(null);
+            history.replaceState(null, "", location.pathname);
+          }}
+        />
+      )}
+
+      {!toolsMissing && status && !findFor && (
         <>
           <div class="paste">
             <textarea

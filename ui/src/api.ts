@@ -48,6 +48,8 @@ export interface Status {
   libraries: { id: string; name: string }[];
   settings: Settings;
   version: string;
+  /** The server keeps music videos (and this extension can bring them). */
+  musicVideos?: boolean;
 }
 
 export interface LinkEntry {
@@ -154,6 +156,37 @@ export interface DownloadRequest {
   albumArtist?: string;
   wholeList?: boolean;
   title?: string;
+  /** A single video: also its music video, next to the song. */
+  video?: boolean;
+  /** Only the video, as the music video of this track of the library. */
+  videoFor?: string;
+}
+
+/** A song of the library whose music video is looked for. */
+export interface VideoSearchSong {
+  id: string;
+  title: string;
+  artist: string | null;
+  durationMs: number;
+  hasVideo: boolean;
+}
+
+/** A video that may be the song's music video. */
+export interface VideoCandidate {
+  id: string;
+  url: string;
+  title: string;
+  channel: string | null;
+  duration: number | null;
+  thumbnail: string | null;
+  score: number;
+  official: boolean;
+}
+
+export interface VideoSearchResult {
+  song: VideoSearchSong;
+  query: string;
+  candidates: VideoCandidate[];
 }
 
 export class ApiError extends Error {
@@ -206,6 +239,7 @@ export const api = {
   remove: (id: string) => call<void>(`downloads/${id}`, { method: "DELETE" }),
   clear: () => call<{ removed: number }>("downloads", { method: "DELETE" }),
   preview: (url: string) => call<{ url: string }>("preview", { method: "POST", ...json({ url }) }),
+  videoSearch: (trackId: string) => call<VideoSearchResult>(`video-search?trackId=${encodeURIComponent(trackId)}`),
   me: () => call<MyYouTube>("me"),
   setPreferences: (playWhenDone: boolean) => call<MyYouTube>("me/preferences", { method: "PUT", ...json({ playWhenDone }) }),
   saveMyCookies: (text: string) => call<MyYouTube>("me/cookies", { method: "PUT", body: text, headers: { "Content-Type": "text/plain" } }),

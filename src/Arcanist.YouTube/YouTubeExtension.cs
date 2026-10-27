@@ -30,6 +30,7 @@ public sealed class YouTubeExtension : IArcanistExtension
         services.AddSingleton<YtDlp>();
         services.AddSingleton<Images>();
         services.AddScoped<Inspector>();
+        services.AddScoped<VideoSearch>();
         services.AddSingleton<DownloadQueue>();
         services.AddHostedService(provider => provider.GetRequiredService<DownloadQueue>());
         services.AddHostedService<ToolUpdater>();

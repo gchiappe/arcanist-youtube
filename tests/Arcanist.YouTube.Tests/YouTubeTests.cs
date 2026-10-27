@@ -510,4 +510,61 @@ public sealed class YouTubeTests : IAsyncDisposable
         Assert.True((await removed.Content.ReadFromJsonAsync<JsonElement>(ArcanistFactory.Json, Cancel)).GetProperty("ok").GetBoolean());
         Assert.False((await GetAsync(_admin, "status")).GetProperty("cookies").GetBoolean());
     }
+
+    [Fact]
+    public async Task A_songs_music_video_is_found_and_brought_next_to_it()
+    {
+        Directory.CreateDirectory(Path.Combine(_music, "Band"));
+        AudioFixtures.WriteWav(Path.Combine(_music, "Band", "01 Song.wav"), 7, new FixtureTags(Title: "Song", Artist: "Band", Album: "Album", AlbumArtist: "Band"));
+        // What a search finds: the official video and a lyric video.
+        _catalog["search"] = new JsonObject
+        {
+            ["info"] = new JsonObject
+            {
+                ["_type"] = "playlist",
+                ["entries"] = new JsonArray(
+                    new JsonObject { ["id"] = "lyricsvid01", ["title"] = "Band - Song (Lyrics)", ["channel"] = "Lyrics Hub", ["duration"] = 2.0 },
+                    new JsonObject { ["id"] = "officialv01", ["title"] = "Band - Song (Official Video)", ["channel"] = "BandVEVO", ["duration"] = 2.0 }),
+            },
+        };
+        Video("officialv01", "Band - Song (Official Video)", "BandVEVO", 7);
+        var clip = Path.Combine(_music + "-sources", "officialv01.mp4");
+        await File.WriteAllBytesAsync(clip, [0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109], Cancel);
+        ((JsonObject)_catalog["https://www.youtube.com/watch?v=officialv01"]!)["video"] = clip;
+        await StartAsync();
+
+        var track = (await _admin.GraphQLAsync("query { tracks(first: 5) { items { id title } } }")).GetProperty("data").GetProperty("tracks").GetProperty("items")[0];
+        var trackId = track.GetProperty("id").GetString()!;
+
+        // Players offer the search on the song's menu.
+        var app = Assert.Single((await _admin.GetFromJsonAsync<List<JsonElement>>("/rest/v1/extension-apps?language=es", ArcanistFactory.Json, Cancel))!);
+        var action = Assert.Single(app.GetProperty("trackActions").EnumerateArray());
+        Assert.Equal(("Buscar el videoclip en YouTube", "/ext/youtube/?video={trackId}", true),
+            (action.GetProperty("name").GetString(), action.GetProperty("url").GetString(), action.GetProperty("withoutVideoOnly").GetBoolean()));
+
+        var found = await GetAsync(_admin, $"video-search?trackId={trackId}");
+        Assert.Equal("Band Song official video", found.GetProperty("query").GetString());
+        var best = found.GetProperty("candidates")[0];
+        Assert.Equal(("officialv01", true), (best.GetProperty("id").GetString(), best.GetProperty("official").GetBoolean()));
+
+        var (status, batch) = await SendAsync(_admin, HttpMethod.Post, "downloads",
+            new { url = "https://www.youtube.com/watch?v=officialv01", libraryId = await LibraryAsync(), videoFor = trackId });
+        Assert.Equal(HttpStatusCode.OK, status);
+        var done = await WaitAsync(_admin, batch.GetProperty("id").GetString()!);
+        Assert.Equal("ADDED", done.GetProperty("items")[0].GetProperty("status").GetString());
+        Assert.True(File.Exists(Path.Combine(_music, "Band", "01 Song.mp4")));
+        Assert.Contains(Calls(), call => call.Contains("ytsearch10:Band Song official video", StringComparison.Ordinal));
+
+        // Scanned, it is the song's music video.
+        JsonElement videos = default;
+        for (var tries = 0; tries < 100; tries++)
+        {
+            await _factory.WaitForScansAsync(_admin);
+            videos = await _admin.GetFromJsonAsync<JsonElement>($"/rest/v1/videos?trackId={trackId}", ArcanistFactory.Json, Cancel);
+            if (videos.GetProperty("totalCount").GetInt32() == 1)
+                break;
+            await Task.Delay(200, Cancel);
+        }
+        Assert.Equal("SIDECAR", videos.GetProperty("items")[0].GetProperty("linkMethod").GetString());
+    }
 }

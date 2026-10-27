@@ -175,6 +175,66 @@ public sealed class YtDlp(ToolManager tools, FfmpegLocator ffmpeg, ExtensionPath
         return new DownloadedFiles(file, chapters);
     }
 
+    /// <summary>
+    /// Downloads a video with its audio into <paramref name="folder"/> as MP4 (the best picture up to
+    /// <paramref name="maxHeight"/> joined with the best audio; without ffmpeg, the best single MP4 file).
+    /// </summary>
+    public async Task<string> DownloadVideoAsync(string url, string folder, int maxHeight, Action<DownloadProgress> progress, CancellationToken cancellationToken)
+    {
+        using var run = await PrepareAsync(cancellationToken);
+        var (path, common) = (run.Path, run.Common);
+        var hasFfmpeg = await FfmpegAsync(cancellationToken) is not null;
+        Directory.CreateDirectory(folder);
+        var arguments = new List<string>(common)
+        {
+            "--no-playlist", "--no-mtime", "--newline", "--progress", "--quiet",
+            "--progress-template", $"download:{ProgressMark} %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s",
+            "--print", $"after_move:{FileMark}%(filepath)s",
+            "-o", Path.Combine(folder, "video.%(ext)s"),
+            "-f", hasFfmpeg
+                ? $"bv*[height<={maxHeight}][ext=mp4]+ba[ext=m4a]/bv*[height<={maxHeight}]+ba/b[height<={maxHeight}]/bv*+ba/b"
+                : $"b[ext=mp4][height<={maxHeight}]/b[ext=mp4]",
+        };
+        if (hasFfmpeg)
+            arguments.AddRange(["--merge-output-format", "mp4"]);
+        arguments.AddRange(["--", url]);
+
+        string? file = null;
+        var result = await ProcessRunner.RunAsync(path, arguments, line =>
+        {
+            if (line.StartsWith(FileMark, StringComparison.Ordinal))
+                file = line[FileMark.Length..].Trim();
+            else if (line.StartsWith(ProgressMark, StringComparison.Ordinal))
+                progress(ParseProgress(line));
+        }, TimeSpan.FromHours(2), cancellationToken);
+
+        if (result.ExitCode != 0)
+            throw Failure(result.Error, ErrorCodes.DownloadFailed, url);
+        file ??= Directory.EnumerateFiles(folder, "video.*").FirstOrDefault();
+        if (file is null || !File.Exists(file))
+            throw Failure(result.Error, ErrorCodes.DownloadFailed, url);
+        return file;
+    }
+
+    /// <summary>What a YouTube search finds (<c>ytsearch</c>), without visiting each video.</summary>
+    public async Task<IReadOnlyList<JsonObject>> SearchAsync(string query, int count, CancellationToken cancellationToken)
+    {
+        using var run = await PrepareAsync(cancellationToken);
+        var (path, common) = (run.Path, run.Common);
+        var arguments = new List<string>(common) { "-J", "--flat-playlist", "--", $"ytsearch{count}:{query}" };
+        var result = await ProcessRunner.RunAsync(path, arguments, null, TimeSpan.FromMinutes(2), cancellationToken);
+        if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.Output))
+            throw Failure(result.Error, ErrorCodes.InspectFailed, query);
+        try
+        {
+            return ((JsonNode.Parse(result.Output.Trim().Split('\n')[^1]) as JsonObject)?["entries"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw Failure(result.Error, ErrorCodes.InspectFailed, query);
+        }
+    }
+
     private static DownloadProgress ParseProgress(string line)
     {
         var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);

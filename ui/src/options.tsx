@@ -10,12 +10,14 @@ export interface Choices {
   libraryId: string;
   artwork: boolean;
   square: boolean;
+  /** Also each single video's music video. */
+  video: boolean;
 }
 
 const KEY = "arcanist.youtube.choices";
 
 export function loadOptions(): Choices {
-  const defaults: Choices = { format: "ORIGINAL", quality: "BEST", libraryId: "", artwork: true, square: true };
+  const defaults: Choices = { format: "ORIGINAL", quality: "BEST", libraryId: "", artwork: true, square: true, video: false };
   try {
     return { ...defaults, ...(JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Choices>) };
   } catch {
@@ -107,6 +109,12 @@ export function Options(props: {
           <label class="check">
             <input type="checkbox" checked={choices.square} onChange={(e) => set("square", (e.target as HTMLInputElement).checked)} />
             {t("square")}
+          </label>
+        )}
+        {status.musicVideos && props.links.some((l) => l.preview && l.preview.kind === "VIDEO") && (
+          <label class="check" title={t("videoHelp")}>
+            <input type="checkbox" checked={choices.video} onChange={(e) => set("video", (e.target as HTMLInputElement).checked)} />
+            {t("video")}
           </label>
         )}
       </div>

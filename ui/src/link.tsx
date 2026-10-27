@@ -93,6 +93,7 @@ export function requestFor(link: LinkState, choices: Choices): DownloadRequest |
     return {
       ...common,
       splitChapters: link.split,
+      video: choices.video || undefined,
       tags: tags.title?.trim() ? { ...tags, year: tags.year ? Number(tags.year) : null } : undefined,
     };
   }

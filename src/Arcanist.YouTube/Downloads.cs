@@ -56,6 +56,7 @@ public enum ItemStatus
 /// <param name="SquareArtwork">Crop that picture to a square (video frames are 16:9; YouTube Music covers are square).</param>
 /// <param name="SplitChapters">Split videos at their chapters (an album uploaded as one video).</param>
 /// <param name="NumberTracks">Number the songs in list order (albums).</param>
+/// <param name="Video">Also bring each song's music video (single videos), next to the song in its library.</param>
 public sealed record DownloadSettings(
     AudioFormat Format,
     AudioQuality Quality,
@@ -64,7 +65,8 @@ public sealed record DownloadSettings(
     bool SplitChapters,
     bool NumberTracks,
     string? Album,
-    string? AlbumArtist);
+    string? AlbumArtist,
+    bool Video = false);
 
 /// <summary>One song (one video) of a download.</summary>
 /// <param name="Tags">The tags it is saved with (those proposed, or the user's for a single video).</param>
@@ -101,6 +103,7 @@ public sealed record DownloadItem(
 }
 
 /// <summary>What one link brought: one song, or many from a list.</summary>
+/// <param name="VideoFor">Only the music video of this track of the library (looked for from the track).</param>
 public sealed record DownloadBatch(
     Guid Id,
     Guid UserId,
@@ -117,7 +120,8 @@ public sealed record DownloadBatch(
     DateTime UpdatedAt,
     IReadOnlyList<DownloadItem> Items,
     IReadOnlyList<string>? Exclude = null,
-    string? ListUrl = null)
+    string? ListUrl = null,
+    Guid? VideoFor = null)
 {
     public int Total => Items.Count;
 
@@ -622,6 +626,18 @@ public sealed class DownloadQueue(
             if (Directory.Exists(folder))
                 Directory.Delete(folder, recursive: true);
 
+            // Only a track's music video: it goes next to the track.
+            if (batch.VideoFor is { } videoFor)
+            {
+                var video = await BringVideoAsync(services, ytDlp, access, batch, item, videoFor, item.Title ?? "video", folder, token);
+                UpdateItem(batch.Id, item.Id, i => i with
+                {
+                    Status = video.Status == UploadStatus.Duplicate ? ItemStatus.Duplicate : ItemStatus.Added,
+                    FileName = video.Path, TrackId = videoFor, TrackIds = [videoFor], Files = 1, Progress = null, Speed = null, Eta = null,
+                }, save: true);
+                return;
+            }
+
             // Its full description: the tags proposed, the picture and the chapters.
             var info = await ytDlp.InspectAsync(item.Url, 1, 1, token);
             var options = batch.Settings;
@@ -712,6 +728,17 @@ public sealed class DownloadQueue(
                 Files = songs.Count,
                 Progress = null,
             }, save: true);
+            // Its music video too, when asked (one song): next to the song once the library has it as a track, else
+            // where the library keeps its artist's music videos (the scan links it by its name).
+            if (options.Video && songs.Count == 1 && results is [var uploaded])
+            {
+                var trackId = uploaded.TrackId ?? await WaitForTrackAsync(batch.LibraryId, uploaded.ContentHash, token);
+                var name = tags.Artist is { } artist ? $"{artist} - {tags.Title}" : tags.Title ?? "video";
+                await BringVideoAsync(services, ytDlp, access, batch, item, trackId, name, folder, token);
+                UpdateItem(batch.Id, item.Id, i => i with { Status = duplicates == songs.Count ? ItemStatus.Duplicate : ItemStatus.Added, Progress = null, Speed = null, Eta = null },
+                    save: true);
+            }
+
             // A new song becomes a track once its library is scanned (some seconds later): the app learns it then, to
             // play it or open it.
             if (results.Any(r => r.TrackId is null))
@@ -747,6 +774,56 @@ public sealed class DownloadQueue(
 
             Done(item.Id);
         }
+    }
+
+    /// <summary>The highest picture brought for music videos.</summary>
+    public const int VideoHeight = 1080;
+
+    /// <summary>
+    /// Downloads an item's video (picture and sound, MP4) and puts it into the library as the user's upload: next to
+    /// the track's copy when there is one, else as a video of the library (named "Artist - Title").
+    /// </summary>
+    private async Task<UploadResult> BringVideoAsync(IServiceProvider services, YtDlp ytDlp, UserAccess access, DownloadBatch batch, DownloadItem item,
+        Guid? trackId, string name, string folder, CancellationToken token)
+    {
+        UpdateItem(batch.Id, item.Id, i => i with { Status = ItemStatus.Downloading, Progress = 0 }, save: false);
+        var lastReport = DateTime.MinValue;
+        var file = await ytDlp.DownloadVideoAsync(item.Url, Path.Combine(folder, "video"), VideoHeight, progress =>
+        {
+            if (progress.Fraction < 1 && DateTime.UtcNow - lastReport < TimeSpan.FromMilliseconds(400))
+                return;
+            lastReport = DateTime.UtcNow;
+            UpdateItem(batch.Id, item.Id, i => i with { Status = ItemStatus.Downloading, Progress = progress.Fraction, Speed = progress.Speed, Eta = progress.Eta },
+                save: false);
+        }, token);
+
+        UpdateItem(batch.Id, item.Id, i => i with { Status = ItemStatus.Importing, Progress = 1, Speed = null, Eta = null }, save: false);
+        var uploads = services.GetRequiredService<UploadService>();
+        var fileName = Files.SafeName(name) + Path.GetExtension(file);
+        using (await services.GetRequiredService<DatabaseMaintenance>().WorkAsync(token))
+        {
+            await using var stream = File.OpenRead(file);
+            return trackId is { } track
+                ? await uploads.UploadVideoAsync(access, track, fileName, stream, Source, token)
+                : await uploads.UploadAsync(access, batch.LibraryId, fileName, stream, Source, token);
+        }
+    }
+
+    /// <summary>The track of a song just put into a library, once the library's scan has it (two minutes at most).</summary>
+    private async Task<Guid?> WaitForTrackAsync(Guid libraryId, string contentHash, CancellationToken token)
+    {
+        for (var attempt = 0; attempt < 24; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), token);
+            using var scope = scopes.CreateScope();
+            await using var db = scope.ServiceProvider.GetRequiredService<IArcanistDbContextFactory>().CreateDbContext();
+            var track = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                db.MediaFiles.Where(f => f.ContentHash == contentHash && f.MissingSince == null && f.LibrarySource.LibraryId == libraryId)
+                    .Select(f => (Guid?)f.TrackId), token);
+            if (track is not null)
+                return track;
+        }
+        return null;
     }
 
     /// <summary>Of the tags guessed, those the file does not have already (its own are usually better).</summary>

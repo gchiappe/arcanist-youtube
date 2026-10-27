@@ -29,7 +29,8 @@ public sealed record StatusModel(
     IReadOnlyList<AudioFormat> Formats,
     IReadOnlyList<TargetLibrary> Libraries,
     YouTubeSettings Settings,
-    string Version);
+    string Version,
+    bool MusicVideos = true);
 
 /// <summary>What to download.</summary>
 /// <param name="Url">The link, as pasted.</param>
@@ -39,6 +40,8 @@ public sealed record StatusModel(
 /// <param name="Tags">For a single video: the tags to save it with (null fields are proposed).</param>
 /// <param name="Album">For a list: the album every song gets (an album's own name by default).</param>
 /// <param name="Title">What the download is called in the queue (the link's title, as inspect gave it).</param>
+/// <param name="Video">For a single video: bring its music video too, next to the song.</param>
+/// <param name="VideoFor">Only the video of the link, as the music video of this track of the library (it goes next to it).</param>
 public sealed record DownloadRequest(
     string Url,
     Guid LibraryId,
@@ -56,7 +59,9 @@ public sealed record DownloadRequest(
     string? Album = null,
     string? AlbumArtist = null,
     bool? WholeList = null,
-    string? Title = null);
+    string? Title = null,
+    bool? Video = null,
+    Guid? VideoFor = null);
 
 public sealed record PreviewLink(string Url);
 
@@ -96,6 +101,13 @@ public static class Api
             inspector.InspectAsync(guard.Permission(Permissions.Upload).UserId, url, tab, after, ct));
 
         api.MapPost("/downloads", DownloadAsync);
+
+        // A library song's music video: candidates on YouTube, the likeliest first.
+        api.MapGet("/video-search", (Guid trackId, AccessGuard guard, VideoSearch search, CancellationToken ct) =>
+        {
+            guard.Permission(Permissions.Upload);
+            return search.SearchAsync(trackId, ct);
+        });
 
         // The songs whose tracks were still unknown are looked up first (their library may have been scanned since).
         api.MapGet("/downloads", async (AccessGuard guard, DownloadQueue queue, CancellationToken ct) =>
@@ -260,8 +272,13 @@ public static class Api
         var access = guard.Permission(Permissions.Upload);
         var current = settings.Current;
         var link = Inspector.Classify(request.Url, current);
-        var library = (await libraries.ListAsync(ct)).FirstOrDefault(l => l.Id == request.LibraryId && l.CanUpload && !l.Disabled)
-                      ?? throw ArcanistException.Field("libraryId", Arcanist.Core.Application.ErrorCodes.NotFound);
+        var uploadable = (await libraries.ListAsync(ct)).Where(l => l.CanUpload && !l.Disabled).ToList();
+        // A track's music video goes where the track is (the library's own check comes with the upload).
+        var library = request.VideoFor is { } trackId
+            ? uploadable.FirstOrDefault(l => l.Id == request.LibraryId) ?? uploadable.FirstOrDefault()
+            : uploadable.FirstOrDefault(l => l.Id == request.LibraryId);
+        if (library is null)
+            throw ArcanistException.Field("libraryId", Arcanist.Core.Application.ErrorCodes.NotFound);
 
         // A video opened in a list: the list when asked for.
         var whole = request.WholeList == true && link.ListUrl is not null;
@@ -281,11 +298,14 @@ public static class Api
             request.SplitChapters ?? false,
             request.NumberTracks ?? kind == LinkKind.Album,
             Clean(request.Album),
-            Clean(request.AlbumArtist));
+            Clean(request.AlbumArtist),
+            request.Video == true && request.VideoFor is null);
 
         var now = DateTime.UtcNow;
         var batch = new DownloadBatch(Guid.CreateVersion7(), access.UserId, url, kind, null, null, library.Id, library.Name, options,
-            BatchStatus.Active, null, now, now, [], request.Exclude?.Take(YouTubeSettings.MaxItemsLimit).ToList(), listUrl);
+            BatchStatus.Active, null, now, now, [], request.Exclude?.Take(YouTubeSettings.MaxItemsLimit).ToList(), listUrl, request.VideoFor);
+        if (request.VideoFor is not null && !single)
+            throw new ExtensionException(ErrorCodes.InvalidLink, 400);
 
         if (single)
         {
