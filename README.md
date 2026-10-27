@@ -20,7 +20,7 @@ Version 0.2 needs Arcanist 0.1.0-alpha.2 or later (its settings page is drawn by
 
 Users need the **UPLOAD** permission and a library they can upload to.
 
-Its settings (tools, the server's cookies, other sites, downloads at a time, default format) are in Arcanist's admin
+Its settings (tools, the server's cookies, other sites, downloads at a time, default format, quality of music videos) are in Arcanist's admin
 panel, under **Extensions › YouTube Audio**, which the panel draws from the page the extension describes.
 
 If YouTube asks the server to "confirm you're not a bot", add the cookies of a YouTube session there (a `cookies.txt`
@@ -39,13 +39,31 @@ library and the cover. Downloads go on in the server; their progress shows live.
 downloads plays what is already in the library (one song, a list, or everything finished); clearing the finished ones
 asks first.
 
+### Music videos
+
+With Arcanist 0.1.0-alpha.11 or later (music videos), the app asks what to bring from each link:
+
+- **Audio**, as always.
+- **Audio and music video**: the song, and its video next to it in the library.
+- **Only the music video**, for songs your libraries already have: the extension finds the song by its title and artist
+  (as Arcanist's scans link music videos; live performances only go with live recordings) and puts the video next to
+  it. When no library has the song yet, the video goes into the library chosen and is linked when the song arrives.
+
+Arcanist then plays each video with the song's own audio where they match. The **video quality** is the server's
+(the administrator chooses it in **Extensions › YouTube Audio**, 1080p by default) or one the user picks, from 360p up
+to 2160p (4K UHD); YouTube gives the best it has up to that.
+
+A player's song menu also offers **Find the music video on YouTube**: the app searches YouTube for that song, ranks
+what it finds (title and artist, official channels, length) and adds the one chosen next to the song.
+
 ## API
 
 The app is a client of the extension's REST API, under `/ext/youtube/api/v1` with Arcanist's Bearer token: see
 [`openapi.json`](ui/public/openapi.json) (served at `/ext/youtube/api/v1/openapi.json`). In short:
 
 - `GET status`, `GET inspect?url=&tab=&after=`
-- `POST downloads` (one video with its `tags`, chosen `entries` of a list, or `all` but `exclude`), `GET downloads`
+- `POST downloads` (one video with its `tags`, chosen `entries` of a list, or `all` but `exclude`; `video`,
+  `videoOnly`, `videoHeight` and `videoFor` for music videos), `GET video-search?trackId=`, `GET downloads`
   (each song in the library says the tracks it became, `trackIds`, once the library catalogues them),
   `GET downloads/{id}`, `POST downloads/{id}/cancel|retry`, `DELETE downloads/{id}`, `GET downloads/events` (SSE)
 - `POST preview` → a link to 30 seconds of audio

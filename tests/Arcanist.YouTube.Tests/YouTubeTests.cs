@@ -567,4 +567,34 @@ public sealed class YouTubeTests : IAsyncDisposable
         }
         Assert.Equal("SIDECAR", videos.GetProperty("items")[0].GetProperty("linkMethod").GetString());
     }
+
+    [Fact]
+    public async Task Only_the_music_video_of_a_song_the_library_has_goes_next_to_it_at_the_quality_chosen()
+    {
+        Directory.CreateDirectory(Path.Combine(_music, "Band"));
+        AudioFixtures.WriteWav(Path.Combine(_music, "Band", "02 Other Song.wav"), 7, new FixtureTags(Title: "Other Song", Artist: "Band", Album: "Album", AlbumArtist: "Band"));
+        Video("officialv02", "Band - Other Song (Official Music Video) [4K]", "BandVEVO", 7);
+        var clip = Path.Combine(_music + "-sources", "officialv02.mp4");
+        await File.WriteAllBytesAsync(clip, [0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109], Cancel);
+        ((JsonObject)_catalog["https://www.youtube.com/watch?v=officialv02"]!)["video"] = clip;
+        await StartAsync();
+        await _factory.WaitForScansAsync(_admin);
+
+        // The administrator's quality is 1080p unless changed.
+        Assert.Equal(1080, (await GetAsync(_admin, "status")).GetProperty("settings").GetProperty("videoHeight").GetInt32());
+
+        var (status, batch) = await SendAsync(_admin, HttpMethod.Post, "downloads",
+            new { url = "https://www.youtube.com/watch?v=officialv02", libraryId = await LibraryAsync(), videoOnly = true, videoHeight = 720 });
+        Assert.Equal(HttpStatusCode.OK, status);
+        var done = await WaitAsync(_admin, batch.GetProperty("id").GetString()!);
+        var item = done.GetProperty("items")[0];
+        Assert.Equal("ADDED", item.GetProperty("status").GetString());
+        Assert.NotEqual(JsonValueKind.Null, item.GetProperty("trackId").ValueKind);
+        // Only the video: next to the song, and no second copy of its audio.
+        Assert.True(File.Exists(Path.Combine(_music, "Band", "02 Other Song.mp4")));
+        Assert.Single(Directory.GetFiles(_music, "*.wav", SearchOption.AllDirectories).Concat(Directory.GetFiles(_music, "*.opus", SearchOption.AllDirectories))
+            .Concat(Directory.GetFiles(_music, "*.m4a", SearchOption.AllDirectories)));
+        Assert.Contains(Calls(), call => call.Contains("height<=720", StringComparison.Ordinal));
+        Assert.DoesNotContain(Calls(), call => call.Contains("height<=1080", StringComparison.Ordinal));
+    }
 }

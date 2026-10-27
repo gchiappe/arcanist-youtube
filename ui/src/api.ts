@@ -36,7 +36,12 @@ export interface Settings {
   autoUpdate: boolean;
   maxItems: number;
   defaultFormat: AudioFormat;
+  /** The highest picture of music videos when users leave it to the server. */
+  videoHeight?: number;
 }
+
+/** The pictures a music video can be brought at. */
+export const VIDEO_HEIGHTS = [2160, 1440, 1080, 720, 480, 360];
 
 export interface Status {
   ready: boolean;
@@ -156,8 +161,12 @@ export interface DownloadRequest {
   albumArtist?: string;
   wholeList?: boolean;
   title?: string;
-  /** A single video: also its music video, next to the song. */
+  /** Also each song's music video, next to the song. */
   video?: boolean;
+  /** Only each link's music video: next to the song when a library already has it. */
+  videoOnly?: boolean;
+  /** The highest picture of the music videos; left out, the administrator's. */
+  videoHeight?: number;
   /** Only the video, as the music video of this track of the library. */
   videoFor?: string;
 }

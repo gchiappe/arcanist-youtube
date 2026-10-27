@@ -253,6 +253,7 @@ function App() {
 
       {!toolsMissing && status && !findFor && (
         <>
+          {status.musicVideos && <span class="muted small">{t("musicVideosNote")}</span>}
           <div class="paste">
             <textarea
               ref={input}

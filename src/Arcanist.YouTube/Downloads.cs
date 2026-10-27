@@ -8,6 +8,7 @@ using Arcanist.Core.Auth;
 using Arcanist.Core.Data;
 using Arcanist.Core.Extensions;
 using Arcanist.Core.Organization;
+using Arcanist.Core.Videos;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -56,7 +57,10 @@ public enum ItemStatus
 /// <param name="SquareArtwork">Crop that picture to a square (video frames are 16:9; YouTube Music covers are square).</param>
 /// <param name="SplitChapters">Split videos at their chapters (an album uploaded as one video).</param>
 /// <param name="NumberTracks">Number the songs in list order (albums).</param>
-/// <param name="Video">Also bring each song's music video (single videos), next to the song in its library.</param>
+/// <param name="Video">Also bring each song's music video, next to the song in its library.</param>
+/// <param name="VideoOnly">Only each video's music video, for a song the libraries already have (next to it), or as a
+/// music video of the library when none has it yet.</param>
+/// <param name="VideoHeight">The highest picture of those videos; null for the administrator's.</param>
 public sealed record DownloadSettings(
     AudioFormat Format,
     AudioQuality Quality,
@@ -66,7 +70,9 @@ public sealed record DownloadSettings(
     bool NumberTracks,
     string? Album,
     string? AlbumArtist,
-    bool Video = false);
+    bool Video = false,
+    bool VideoOnly = false,
+    int? VideoHeight = null);
 
 /// <summary>One song (one video) of a download.</summary>
 /// <param name="Tags">The tags it is saved with (those proposed, or the user's for a single video).</param>
@@ -641,6 +647,23 @@ public sealed class DownloadQueue(
             // Its full description: the tags proposed, the picture and the chapters.
             var info = await ytDlp.InspectAsync(item.Url, 1, 1, token);
             var options = batch.Settings;
+
+            // Only its music video: next to the song when a library the user can play has it.
+            if (options.VideoOnly)
+            {
+                var guessed = item.Tags ?? TagGuesser.Guess(info);
+                var title = TagGuesser.Text(info, "title") ?? item.Title ?? "video";
+                var song = await FindSongAsync(access, guessed, title, TagGuesser.Number(info, "duration"), token);
+                UpdateItem(batch.Id, item.Id, i => i with { Title = i.Title ?? title, Tags = guessed }, save: false);
+                var name = guessed.Artist is { } artist ? $"{artist} - {guessed.Title ?? title}" : guessed.Title ?? title;
+                var video = await BringVideoAsync(services, ytDlp, access, batch, item, song, name, folder, token);
+                UpdateItem(batch.Id, item.Id, i => i with
+                {
+                    Status = video.Status == UploadStatus.Duplicate ? ItemStatus.Duplicate : ItemStatus.Added,
+                    FileName = video.Path, TrackId = song, TrackIds = song is { } found ? [found] : null, Files = 1, Progress = null, Speed = null, Eta = null,
+                }, save: true);
+                return;
+            }
             var number = options.NumberTracks ? item.Index : null;
             // The user's tags (a single video) are written as they are; guessed ones only fill what the file lacks.
             var chosen = item.Tags is not null;
@@ -776,8 +799,35 @@ public sealed class DownloadQueue(
         }
     }
 
-    /// <summary>The highest picture brought for music videos.</summary>
-    public const int VideoHeight = 1080;
+    /// <summary>
+    /// The library song a video shows, among those the user can play: found as Arcanist's scans link music videos (the
+    /// title without "(Official Video)" and the like, the artist; live performances only with live recordings).
+    /// </summary>
+    private async Task<Guid?> FindSongAsync(UserAccess access, SongTags tags, string videoTitle, double? duration, CancellationToken token)
+    {
+        var parsed = VideoTitles.Parse(tags.Title ?? videoTitle, tags.Artist);
+        if (parsed.Artist is null)
+            return null;
+        var probe = new Arcanist.Core.Data.Entities.MusicVideo
+        {
+            RelativePath = "",
+            ContentHash = "",
+            Title = parsed.Title,
+            NormalizedTitle = TextNormalizer.Normalize(parsed.Title),
+            Artist = parsed.Artist,
+            NormalizedArtist = TextNormalizer.Normalize(parsed.Artist),
+            IsLive = parsed.IsLive || VideoTitles.IsLive(videoTitle),
+            DurationMs = duration is { } seconds ? (int)(seconds * 1000) : 0,
+        };
+        using var scope = scopes.CreateScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<IArcanistDbContextFactory>().CreateDbContext();
+        if (await VideoLinker.FindAsync(db, probe, token) is not { } link)
+            return null;
+        // Only a song of a library the user can play (the upload checks they may add to it).
+        var libraries = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            db.MediaFiles.Where(f => f.TrackId == link.TrackId && f.MissingSince == null).Select(f => f.LibrarySource.LibraryId).Distinct(), token);
+        return libraries.Any(access.CanAccessLibrary) ? link.TrackId : null;
+    }
 
     /// <summary>
     /// Downloads an item's video (picture and sound, MP4) and puts it into the library as the user's upload: next to
@@ -788,7 +838,8 @@ public sealed class DownloadQueue(
     {
         UpdateItem(batch.Id, item.Id, i => i with { Status = ItemStatus.Downloading, Progress = 0 }, save: false);
         var lastReport = DateTime.MinValue;
-        var file = await ytDlp.DownloadVideoAsync(item.Url, Path.Combine(folder, "video"), VideoHeight, progress =>
+        var height = YouTubeSettings.ValidHeight(batch.Settings.VideoHeight ?? settings.Current.VideoHeight);
+        var file = await ytDlp.DownloadVideoAsync(item.Url, Path.Combine(folder, "video"), height, progress =>
         {
             if (progress.Fraction < 1 && DateTime.UtcNow - lastReport < TimeSpan.FromMilliseconds(400))
                 return;

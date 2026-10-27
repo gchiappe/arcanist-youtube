@@ -188,7 +188,8 @@
           "concurrency": { "type": "integer", "minimum": 1, "maximum": 4 },
           "autoUpdate": { "type": "boolean" },
           "maxItems": { "type": "integer", "minimum": 1, "maximum": 5000 },
-          "defaultFormat": { "$ref": "#/components/schemas/AudioFormat" }
+          "defaultFormat": { "$ref": "#/components/schemas/AudioFormat" },
+          "videoHeight": { "enum": [2160, 1440, 1080, 720, 480, 360], "description": "The highest picture of music videos when users leave it to the server (1080 by default)." }
         }
       },
       "LinkEntry": {
@@ -252,7 +253,11 @@
           "album": { "type": "string" },
           "albumArtist": { "type": "string" },
           "wholeList": { "type": "boolean", "description": "A video opened inside a list: take the list." },
-          "title": { "type": "string", "description": "What the download is called in the queue." }
+          "title": { "type": "string", "description": "What the download is called in the queue." },
+          "video": { "type": "boolean", "description": "Also each song's music video, next to the song in its library (servers with music videos)." },
+          "videoOnly": { "type": "boolean", "description": "Only each link's music video, without its audio: next to the song when a library the user can play already has it (by title and artist, as Arcanist's scans link videos), else as a music video of the library chosen." },
+          "videoHeight": { "enum": [2160, 1440, 1080, 720, 480, 360], "description": "The highest picture of the music videos; left out, the administrator's (videoHeight of the settings)." },
+          "videoFor": { "type": "string", "format": "uuid", "description": "Only the link's video, as the music video of this track (it goes next to it). See video-search." }
         }
       },
       "DownloadItem": {

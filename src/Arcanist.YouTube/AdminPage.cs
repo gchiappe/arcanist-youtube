@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Arcanist.Core.Application;
 using Arcanist.Extensibility;
@@ -45,6 +46,8 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
                 AdminBlock.Field("otherSites", t.OtherSites, AdminFieldType.TextArea, string.Join('\n', current.OtherSites), t.OtherSitesHelp,
                     placeholder: "soundcloud.com\nbandcamp.com"),
                 AdminBlock.Field("defaultFormat", t.DefaultFormat, AdminFieldType.Select, current.DefaultFormat.ToString(), options: formats),
+                AdminBlock.Field("videoHeight", t.VideoHeight, AdminFieldType.Select, current.VideoHeight.ToString(CultureInfo.InvariantCulture), t.VideoHeightHelp,
+                    options: YouTubeSettings.VideoHeights.Select(h => new AdminOption(h.ToString(CultureInfo.InvariantCulture), Texts.Height(h))).ToList()),
                 AdminBlock.Field("concurrency", t.Concurrency, AdminFieldType.Number, current.Concurrency, min: 1, max: YouTubeSettings.MaxConcurrency),
                 AdminBlock.Field("maxItems", t.MaxItems, AdminFieldType.Number, current.MaxItems, t.MaxItemsHelp, min: 1, max: YouTubeSettings.MaxItemsLimit),
                 AdminBlock.Field("autoUpdate", t.AutoUpdate, AdminFieldType.Switch, current.AutoUpdate, t.AutoUpdateHelp),
@@ -77,7 +80,8 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
             Number("concurrency") ?? current.Concurrency,
             values.TryGetValue("autoUpdate", out var update) && update.ValueKind is JsonValueKind.True or JsonValueKind.False ? update.GetBoolean() : current.AutoUpdate,
             Number("maxItems") ?? current.MaxItems,
-            format).Normalized();
+            format,
+            Text("videoHeight") is { } height && int.TryParse(height, CultureInfo.InvariantCulture, out var h) ? h : current.VideoHeight).Normalized();
         settings.Save(saved);
         queue.Wake();
 
@@ -169,6 +173,17 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
         {
             AudioFormat.Original => S("Original (sin convertir)", "Original (not converted)"),
             _ => format.ToString().ToUpperInvariant(),
+        };
+        public string VideoHeight => S("Calidad de los videoclips", "Quality of music videos");
+        public string VideoHeightHelp => S("La que se usa cuando el usuario la deja en «la del servidor». Más alta pesa mucho más (un UHD, varias veces un 1080p).",
+            "Used when the user leaves it to the server. Higher weighs much more (UHD, several times 1080p).");
+        public static string Height(int height) => height switch
+        {
+            2160 => "2160p (4K UHD)",
+            1440 => "1440p (QHD)",
+            1080 => "1080p (Full HD)",
+            720 => "720p (HD)",
+            _ => $"{height}p",
         };
         public string Concurrency => S("Descargas a la vez", "Downloads at a time");
         public string MaxItems => S("Máximo de canciones por enlace", "Most songs per link");

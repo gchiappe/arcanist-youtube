@@ -87,13 +87,15 @@ export function requestFor(link: LinkState, choices: Choices): DownloadRequest |
     embedArtwork: choices.artwork,
     squareArtwork: choices.square,
     title: preview.title,
+    video: choices.videoMode === "ALSO" || undefined,
+    videoOnly: choices.videoMode === "ONLY" || undefined,
+    videoHeight: choices.videoMode !== "AUDIO" && choices.videoHeight > 0 ? choices.videoHeight : undefined,
   };
   if (!isList(preview)) {
     const tags = link.tags;
     return {
       ...common,
       splitChapters: link.split,
-      video: choices.video || undefined,
       tags: tags.title?.trim() ? { ...tags, year: tags.year ? Number(tags.year) : null } : undefined,
     };
   }

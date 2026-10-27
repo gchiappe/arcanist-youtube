@@ -28,17 +28,28 @@ public enum AudioQuality
 /// <param name="AutoUpdate">Keep yt-dlp and Deno up to date (YouTube changes often, and old versions stop working).</param>
 /// <param name="MaxItems">The most songs one link brings (a channel can have thousands).</param>
 /// <param name="DefaultFormat">The format the app suggests.</param>
+/// <param name="VideoHeight">The highest picture of the music videos brought when the user leaves it to the server (one of
+/// <see cref="VideoHeights"/>): taller ones weigh much more (UHD, several times 1080p).</param>
 public sealed record YouTubeSettings(
     IReadOnlyList<string> OtherSites,
     int Concurrency,
     bool AutoUpdate,
     int MaxItems,
-    AudioFormat DefaultFormat)
+    AudioFormat DefaultFormat,
+    int VideoHeight = YouTubeSettings.DefaultVideoHeight)
 {
     public static readonly YouTubeSettings Default = new([], 2, true, 500, AudioFormat.Original);
 
     public const int MaxConcurrency = 4;
     public const int MaxItemsLimit = 5000;
+
+    public const int DefaultVideoHeight = 1080;
+
+    /// <summary>The pictures a music video can be brought at, as Arcanist's own versions of them (UHD down to 360p).</summary>
+    public static readonly IReadOnlyList<int> VideoHeights = [2160, 1440, 1080, 720, 480, 360];
+
+    /// <summary>The nearest allowed height not above <paramref name="height"/> (the lowest for less).</summary>
+    public static int ValidHeight(int height) => VideoHeights.FirstOrDefault(h => h <= height) is var h and > 0 ? h : VideoHeights[^1];
 
     /// <summary>Within limits; the other sites by domain (a URL gives its host), never YouTube's own.</summary>
     public YouTubeSettings Normalized() => new(
@@ -46,7 +57,8 @@ public sealed record YouTubeSettings(
             .Select(s => s.Contains("://", StringComparison.Ordinal) && Uri.TryCreate(s, UriKind.Absolute, out var uri) ? uri.Host : s.Split('/')[0])
             .Where(s => s.Length is > 0 and <= 253 && s.Contains('.') && !UrlClassifier.IsYouTubeHost(s))
             .Distinct().Take(100).ToList(),
-        Math.Clamp(Concurrency, 1, MaxConcurrency), AutoUpdate, Math.Clamp(MaxItems, 1, MaxItemsLimit), DefaultFormat);
+        Math.Clamp(Concurrency, 1, MaxConcurrency), AutoUpdate, Math.Clamp(MaxItems, 1, MaxItemsLimit), DefaultFormat,
+        ValidHeight(VideoHeight <= 0 ? DefaultVideoHeight : VideoHeight));
 }
 
 /// <summary>Keeps the settings in the extension's data folder.</summary>

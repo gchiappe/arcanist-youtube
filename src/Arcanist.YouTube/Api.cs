@@ -40,7 +40,11 @@ public sealed record StatusModel(
 /// <param name="Tags">For a single video: the tags to save it with (null fields are proposed).</param>
 /// <param name="Album">For a list: the album every song gets (an album's own name by default).</param>
 /// <param name="Title">What the download is called in the queue (the link's title, as inspect gave it).</param>
-/// <param name="Video">For a single video: bring its music video too, next to the song.</param>
+/// <param name="Video">Bring each song's music video too, next to the song.</param>
+/// <param name="VideoOnly">Only each link's music video, without its audio: next to the song when a library already has
+/// it, else as a music video of the library chosen.</param>
+/// <param name="VideoHeight">The highest picture of the music videos (2160, 1440, 1080, 720, 480 or 360); leave out for the
+/// administrator's.</param>
 /// <param name="VideoFor">Only the video of the link, as the music video of this track of the library (it goes next to it).</param>
 public sealed record DownloadRequest(
     string Url,
@@ -61,7 +65,9 @@ public sealed record DownloadRequest(
     bool? WholeList = null,
     string? Title = null,
     bool? Video = null,
-    Guid? VideoFor = null);
+    Guid? VideoFor = null,
+    bool? VideoOnly = null,
+    int? VideoHeight = null);
 
 public sealed record PreviewLink(string Url);
 
@@ -299,7 +305,9 @@ public static class Api
             request.NumberTracks ?? kind == LinkKind.Album,
             Clean(request.Album),
             Clean(request.AlbumArtist),
-            request.Video == true && request.VideoFor is null);
+            request.Video == true && request.VideoOnly != true && request.VideoFor is null,
+            request.VideoOnly == true && request.VideoFor is null,
+            request.VideoHeight is > 0 and var height ? YouTubeSettings.ValidHeight(height) : null);
 
         var now = DateTime.UtcNow;
         var batch = new DownloadBatch(Guid.CreateVersion7(), access.UserId, url, kind, null, null, library.Id, library.Name, options,

@@ -3,6 +3,7 @@ import { api, type DownloadBatch, type Status, type VideoSearchResult } from "./
 import { t } from "./i18n";
 import { Icon } from "./icons";
 import type { Toast } from "./main";
+import { loadOptions, saveOptions, VideoHeightSelect } from "./options";
 import { errorOf } from "./main";
 
 /** The track whose music video was asked for (a player's "find the music video" opens the app with ?video=<id>). */
@@ -30,6 +31,12 @@ export function VideoFinder(props: {
   const [result, setResult] = useState<VideoSearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // The same quality as the main view (0 = the server's).
+  const [height, setHeight] = useState(() => loadOptions().videoHeight);
+  const chooseHeight = (value: number) => {
+    setHeight(value);
+    saveOptions({ ...loadOptions(), videoHeight: value });
+  };
 
   useEffect(() => {
     setResult(null);
@@ -43,7 +50,7 @@ export function VideoFinder(props: {
   const add = async (url: string) => {
     setBusy(url);
     try {
-      const batch = await api.download({ url, libraryId: props.status.libraries[0]?.id ?? "", videoFor: props.trackId, title: result?.song.title });
+      const batch = await api.download({ url, libraryId: props.status.libraries[0]?.id ?? "", videoFor: props.trackId, videoHeight: height > 0 ? height : undefined, title: result?.song.title });
       props.onAdded(batch);
       props.show({ text: t("findVideo.added") });
     } catch (e) {
@@ -62,6 +69,9 @@ export function VideoFinder(props: {
         </button>
       </div>
       {result?.song.hasVideo && <span class="muted small">{t("findVideo.has")}</span>}
+      <div style={{ maxWidth: 260 }}>
+        <VideoHeightSelect id="find-height" status={props.status} value={height} onChange={chooseHeight} />
+      </div>
       {error && <div class="notice">{error}</div>}
       {!result && !error && (
         <div class="row muted">
