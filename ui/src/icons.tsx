@@ -18,9 +18,12 @@ const paths: Record<string, string> = {
 
 export function Icon({ name, class: className }: { name: keyof typeof paths | string; class?: string }) {
   const filled = name === "play" || name === "stop";
+  // 16 px wherever no rule sizes it: an SVG without a size fills its box (a huge spinner next to a text).
   return (
     <svg
       class={className}
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill={filled ? "currentColor" : "none"}
       stroke={filled ? "none" : "currentColor"}

@@ -124,6 +124,8 @@ export interface DownloadItem {
   contentHashes?: string[];
   /** The track each of those files became (same order; null until the library catalogues it). */
   trackIds?: (string | null)[];
+  /** Only its video, as the music video of this track (a batch of music videos). */
+  videoFor?: string;
   updatedAt: string;
 }
 

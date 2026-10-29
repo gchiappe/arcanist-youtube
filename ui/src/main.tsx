@@ -44,6 +44,21 @@ function App() {
   const [view, setView] = useState<"links" | "videos">("links");
   /** Songs whose music videos are looked for at once. */
   const [batchSongs, setBatchSongs] = useState<LibrarySong[] | null>(null);
+  /** Songs whose music videos were sent to the queue in this visit (the list says they are on their way). */
+  const [sent, setSent] = useState<ReadonlySet<string>>(new Set());
+  /** Where the list of songs was scrolled to, to come back to it. */
+  const listScroll = useRef(0);
+
+  const markSent = (ids: string[]) => setSent((current) => new Set([...current, ...ids]));
+
+  /** Back from a song's (or many songs') videos to the list, where it was. */
+  const backToSongs = () => {
+    const fromList = view === "videos";
+    setFindFor(null);
+    setBatchSongs(null);
+    if (location.search) history.replaceState(null, "", location.pathname);
+    if (fromList) requestAnimationFrame(() => window.scrollTo(0, listScroll.current));
+  };
   /** Songs already handed to the player, or there before the app opened (never played again). */
   const handed = useRef<Set<string> | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -248,11 +263,13 @@ function App() {
           trackId={findFor}
           status={status}
           show={show}
-          onAdded={(batch) => setBatches((current) => [batch, ...current.filter((b) => b.id !== batch.id)])}
-          onBack={() => {
-            setFindFor(null);
-            history.replaceState(null, "", location.pathname);
+          onAdded={(batch) => {
+            setBatches((current) => [batch, ...current.filter((b) => b.id !== batch.id)]);
+            markSent([findFor]);
+            // Chosen from the list of songs: back to it, where the user was.
+            if (view === "videos") backToSongs();
           }}
+          onBack={backToSongs}
         />
       )}
 
@@ -261,8 +278,11 @@ function App() {
           songs={batchSongs}
           status={status}
           show={show}
-          onAdded={(batch) => setBatches((current) => [batch, ...current.filter((b) => b.id !== batch.id)])}
-          onBack={() => setBatchSongs(null)}
+          onAdded={(batch) => {
+            setBatches((current) => [batch, ...current.filter((b) => b.id !== batch.id)]);
+            markSent(batch.items.map((i) => i.videoFor).filter((id): id is string => !!id));
+          }}
+          onBack={backToSongs}
         />
       )}
 
@@ -277,8 +297,25 @@ function App() {
         </div>
       )}
 
-      {!toolsMissing && status && !findFor && !batchSongs && view === "videos" && (
-        <SongPicker status={status} show={show} onFind={(song) => setFindFor(song.id)} onBatch={setBatchSongs} />
+      {/* Kept while a song's (or many songs') videos are looked for, so the list is as it was when the user comes back. */}
+      {!toolsMissing && status && view === "videos" && (
+        <div style={{ display: findFor || batchSongs ? "none" : "contents" }}>
+          <SongPicker
+            status={status}
+            show={show}
+            sent={sent}
+            onFind={(song) => {
+              listScroll.current = window.scrollY;
+              setFindFor(song.id);
+              window.scrollTo(0, 0);
+            }}
+            onBatch={(songs) => {
+              listScroll.current = window.scrollY;
+              setBatchSongs(songs);
+              window.scrollTo(0, 0);
+            }}
+          />
+        </div>
       )}
 
       {!toolsMissing && status && !findFor && !batchSongs && view === "links" && (

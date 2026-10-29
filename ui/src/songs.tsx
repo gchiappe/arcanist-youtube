@@ -37,6 +37,8 @@ function Cover({ song }: { song: LibrarySong }) {
  */
 export function SongPicker(props: {
   status: Status;
+  /** Songs whose videos are on their way (sent in this visit). */
+  sent: ReadonlySet<string>;
   onFind: (song: LibrarySong) => void;
   onBatch: (songs: LibrarySong[]) => void;
   show: (toast: Toast) => void;
@@ -50,6 +52,14 @@ export function SongPicker(props: {
   const [chosen, setChosen] = useState<Map<string, LibrarySong>>(new Map());
   const [gathering, setGathering] = useState(false);
   const generation = useRef(0);
+
+  // Those sent to the queue are no longer chosen.
+  useEffect(() => {
+    setChosen((current) => {
+      if (![...current.keys()].some((id) => props.sent.has(id))) return current;
+      return new Map([...current].filter(([id]) => !props.sent.has(id)));
+    });
+  }, [props.sent]);
 
   const query = { search: search.trim() || undefined, libraryId: libraryId || undefined, withoutVideo };
 
@@ -165,6 +175,7 @@ export function SongPicker(props: {
                   {song.artist ?? ""} · {song.album}
                   {song.year ? ` (${song.year})` : ""} · {clock(song.durationMs)}
                   {song.hasVideo && <span class="pill ok"> {t("pick.hasVideo")}</span>}
+                  {!song.hasVideo && props.sent.has(song.id) && <span class="pill accent"> {t("pick.coming")}</span>}
                 </div>
               </div>
               <button class="btn small" onClick={() => props.onFind(song)}>

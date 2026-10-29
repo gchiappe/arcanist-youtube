@@ -74,9 +74,20 @@ export function VideoFinder(props: {
       </div>
       {error && <div class="notice">{error}</div>}
       {!result && !error && (
-        <div class="row muted">
-          <Icon name="loader" class="spin" /> {t("findVideo.searching")}
-        </div>
+        <>
+          <div class="row muted small">
+            <Icon name="loader" class="spin" /> {t("findVideo.searching")}
+          </div>
+          {[0, 1, 2].map((i) => (
+            <div key={i} class="row" style={{ gap: 12, alignItems: "flex-start" }}>
+              <div class="skeleton" style={{ width: 160, aspectRatio: "16 / 9", flex: "0 0 160px" }} />
+              <div class="grow" style={{ display: "grid", gap: 6 }}>
+                <div class="skeleton" style={{ height: 14, width: "70%" }} />
+                <div class="skeleton" style={{ height: 12, width: "40%" }} />
+              </div>
+            </div>
+          ))}
+        </>
       )}
       {result && result.candidates.length === 0 && <div class="notice">{t("findVideo.none")}</div>}
       <ul class="grid" style={{ gap: 10, listStyle: "none", padding: 0, margin: 0 }}>
