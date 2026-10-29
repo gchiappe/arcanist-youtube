@@ -744,3 +744,78 @@ details[open] > summary::before {
   align-items: center;
   gap: 2px;
 }
+
+/* Songs of the library (music videos) */
+.song {
+  display: grid;
+  grid-template-columns: auto 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.song input,
+.candidate input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.song .t,
+.candidate .t {
+  min-width: 0;
+}
+.song .t div,
+.candidate .t div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--border);
+}
+.batch-row:last-child .song {
+  border-bottom: 0;
+}
+.candidates {
+  display: grid;
+  gap: 2px;
+  padding: 4px 10px 10px 36px;
+  border-bottom: 1px solid var(--border);
+}
+.candidate {
+  display: grid;
+  grid-template-columns: auto 72px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.candidate:hover {
+  background: var(--surface);
+}
+.candidate .mini {
+  width: 72px;
+  aspect-ratio: 16 / 9;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--border);
+}
+@media (max-width: 520px) {
+  .candidate {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .candidate .mini {
+    display: none;
+  }
+}
+.segments button svg {
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+}

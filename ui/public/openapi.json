@@ -64,6 +64,39 @@
       },
       "delete": { "operationId": "ClearDownloads", "summary": "Forgets the finished ones.", "responses": { "200": { "description": "How many" } } }
     },
+    "/video-search": {
+      "get": {
+        "operationId": "VideoSearch",
+        "summary": "A library song's music video: candidates on YouTube, the likeliest first (title and artist, official channels, length).",
+        "parameters": [{ "name": "trackId", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "The song and the candidates", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VideoSearchResult" } } } } }
+      }
+    },
+    "/songs": {
+      "get": {
+        "operationId": "Songs",
+        "summary": "The songs of the libraries the user can add to, by title: to choose those whose music videos are looked for.",
+        "parameters": [
+          { "name": "search", "in": "query", "description": "Words of the title, artists or album (each as the start of a word).", "schema": { "type": "string" } },
+          { "name": "libraryId", "in": "query", "description": "Only this library (one the user can add to).", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "withoutVideo", "in": "query", "description": "Only songs no music video is linked to yet.", "schema": { "type": "boolean" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "first", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 } }
+        ],
+        "responses": { "200": { "description": "A page of songs", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SongPage" } } } } }
+      }
+    },
+    "/video-downloads": {
+      "post": {
+        "operationId": "VideoDownloads",
+        "summary": "Many songs' music videos as one download: each video (a single video's link) goes next to its song.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VideoDownloadsRequest" } } } },
+        "responses": {
+          "200": { "description": "The download", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadBatch" } } } },
+          "400": { "description": "nothing_selected, or invalid_link (a link that is not one video)" }
+        }
+      }
+    },
     "/downloads/{id}": {
       "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
       "get": { "operationId": "DownloadById", "responses": { "200": { "description": "The download", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadBatch" } } } } } },
@@ -278,7 +311,71 @@
           "trackId": { "type": ["string", "null"], "description": "The track of its only file, once catalogued." },
           "files": { "type": "integer" },
           "contentHashes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "The audio of each file it put into the library (Arcanist's content hash)." },
-          "trackIds": { "type": ["array", "null"], "items": { "type": ["string", "null"], "format": "uuid" }, "description": "The track each of those files became, in the same order; null until the library catalogues it (GET downloads looks again)." }
+          "trackIds": { "type": ["array", "null"], "items": { "type": ["string", "null"], "format": "uuid" }, "description": "The track each of those files became, in the same order; null until the library catalogues it (GET downloads looks again)." },
+          "videoFor": { "type": ["string", "null"], "format": "uuid", "description": "Only its video, as the music video of this track (a batch of POST video-downloads)." }
+        }
+      },
+      "LibrarySong": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "The track." },
+          "title": { "type": "string" },
+          "artist": { "type": ["string", "null"] },
+          "album": { "type": "string" },
+          "year": { "type": ["integer", "null"] },
+          "durationMs": { "type": "integer" },
+          "artworkId": { "type": ["string", "null"], "format": "uuid", "description": "For /rest/v1/artwork/{id}." },
+          "hasVideo": { "type": "boolean", "description": "A music video is linked to it already." }
+        }
+      },
+      "SongPage": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/LibrarySong" } },
+          "next": { "type": ["integer", "null"], "description": "The offset of the next page; null on the last one." },
+          "totalCount": { "type": "integer" }
+        }
+      },
+      "VideoCandidate": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "title": { "type": "string" },
+          "channel": { "type": ["string", "null"] },
+          "duration": { "type": ["number", "null"], "description": "Seconds." },
+          "thumbnail": { "type": ["string", "null"] },
+          "score": { "type": "integer", "description": "How likely it is the music video, 0–100." },
+          "official": { "type": "boolean", "description": "From the artist's channel or VEVO, or titled as the official video." }
+        }
+      },
+      "VideoSearchResult": {
+        "type": "object",
+        "properties": {
+          "song": { "type": "object", "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "artist": { "type": ["string", "null"] }, "durationMs": { "type": "integer" }, "hasVideo": { "type": "boolean" } } },
+          "query": { "type": "string", "description": "What was searched for." },
+          "candidates": { "type": "array", "items": { "$ref": "#/components/schemas/VideoCandidate" } }
+        }
+      },
+      "VideoDownloadsRequest": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "required": ["trackId", "url"],
+              "properties": {
+                "trackId": { "type": "string", "format": "uuid" },
+                "url": { "type": "string", "description": "The link of one video." },
+                "title": { "type": "string", "description": "The song, for the queue." }
+              }
+            }
+          },
+          "title": { "type": "string", "description": "What the download is called in the queue." },
+          "videoHeight": { "type": "integer", "enum": [2160, 1440, 1080, 720, 480, 360], "description": "The highest picture; left out, the administrator's." }
         }
       },
       "DownloadBatch": {

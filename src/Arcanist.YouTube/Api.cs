@@ -69,6 +69,16 @@ public sealed record DownloadRequest(
     bool? VideoOnly = null,
     int? VideoHeight = null);
 
+/// <summary>One music video of a batch: the video chosen for a song of the library.</summary>
+/// <param name="Url">The video's link (one video).</param>
+/// <param name="Title">The song, for the queue ("Artist – Title").</param>
+public sealed record VideoDownload(Guid TrackId, string Url, string? Title = null);
+
+/// <summary>The music videos of many songs at once, each next to its song.</summary>
+/// <param name="Title">What the batch is called in the queue.</param>
+/// <param name="VideoHeight">The highest picture (2160 … 360); leave out for the administrator's.</param>
+public sealed record VideoDownloadsRequest(IReadOnlyList<VideoDownload> Items, string? Title = null, int? VideoHeight = null);
+
 public sealed record PreviewLink(string Url);
 
 public sealed record PreviewRequest(string Url);
@@ -114,6 +124,14 @@ public static class Api
             guard.Permission(Permissions.Upload);
             return search.SearchAsync(trackId, ct);
         });
+
+        // The songs of the libraries the user can add to, to choose those whose music videos are looked for.
+        api.MapGet("/songs", (string? search, Guid? libraryId, bool? withoutVideo, int? offset, int? first, AccessGuard guard, SongList songs,
+                CancellationToken ct) =>
+            songs.ListAsync(guard.Permission(Permissions.Upload), search, libraryId, withoutVideo == true, offset ?? 0, first ?? 50, ct));
+
+        // Many songs' music videos as one download, each next to its song.
+        api.MapPost("/video-downloads", VideoDownloadsAsync);
 
         // The songs whose tracks were still unknown are looked up first (their library may have been scanned since).
         api.MapGet("/downloads", async (AccessGuard guard, DownloadQueue queue, CancellationToken ct) =>
@@ -342,6 +360,31 @@ public static class Api
         }
 
         return queue.Add(batch with { Title = batch.Title ?? Clean(request.Album) ?? Clean(request.Title) });
+    }
+
+    private static async Task<DownloadBatch> VideoDownloadsAsync(VideoDownloadsRequest request, AccessGuard guard, SettingsStore settings,
+        LibraryService libraries, DownloadQueue queue, CancellationToken ct)
+    {
+        var access = guard.Permission(Permissions.Upload);
+        var current = settings.Current;
+        // Each video goes next to its song (the upload checks the user may add to its library).
+        var library = (await libraries.ListAsync(ct)).FirstOrDefault(l => l.CanUpload && !l.Disabled && !l.Virtual)
+                      ?? throw ArcanistException.Field("libraryId", Arcanist.Core.Application.ErrorCodes.NotFound);
+        var chosen = (request.Items ?? []).DistinctBy(i => i.TrackId).Take(YouTubeSettings.MaxItemsLimit).ToList();
+        if (chosen.Count == 0)
+            throw new ExtensionException(ErrorCodes.NothingSelected, 400);
+        var links = chosen.Select(i => (Item: i, Link: Inspector.Classify(i.Url, current))).ToList();
+        if (links.Any(l => l.Link.Kind is not (LinkKind.Video or LinkKind.Other)))
+            throw new ExtensionException(ErrorCodes.InvalidLink, 400);
+
+        var options = new DownloadSettings(current.DefaultFormat, AudioQuality.Best, false, false, false, false, null, null,
+            VideoHeight: request.VideoHeight is > 0 and var height ? YouTubeSettings.ValidHeight(height) : null);
+        var now = DateTime.UtcNow;
+        var batch = new DownloadBatch(Guid.CreateVersion7(), access.UserId, links[0].Link.Url, LinkKind.Playlist, Clean(request.Title), null, library.Id,
+            library.Name, options, BatchStatus.Active, null, now, now, []);
+        var items = links.Select((l, index) => DownloadQueue.NewItem(new RequestedEntry(l.Link.Id ?? l.Link.Url, l.Link.Url, index + 1, Clean(l.Item.Title), null, null), batch)
+            with { VideoFor = l.Item.TrackId }).ToList();
+        return queue.Add(batch with { Items = items });
     }
 
     private static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim()[..Math.Min(text.Trim().Length, 256)];

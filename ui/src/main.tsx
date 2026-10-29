@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { api, ApiError, watchDownloads, type DownloadBatch, type DownloadRequest, type MyYouTube, type Status } from "./api";
+import { api, ApiError, watchDownloads, type DownloadBatch, type DownloadRequest, type LibrarySong, type MyYouTube, type Status } from "./api";
 import { host } from "./host";
 import { errorText, t } from "./i18n";
 import { Icon } from "./icons";
@@ -8,6 +8,7 @@ import { LinkCard, chosenCount, initFrom, newLink, requestFor, type LinkState } 
 import { Options, loadOptions, saveOptions, type Choices } from "./options";
 import { Queue, awaitsTracks, tracksOf } from "./queue";
 import { MySettings } from "./settings";
+import { SongPicker, VideoBatch } from "./songs";
 import { VideoFinder, videoTrack } from "./video";
 import "./styles.css";
 
@@ -39,6 +40,10 @@ function App() {
   const [mine, setMine] = useState(false);
   /** A library song whose music video is looked for (opened from a player's song menu). */
   const [findFor, setFindFor] = useState<string | null>(videoTrack());
+  /** Links to bring, or songs of the library whose music videos are looked for. */
+  const [view, setView] = useState<"links" | "videos">("links");
+  /** Songs whose music videos are looked for at once. */
+  const [batchSongs, setBatchSongs] = useState<LibrarySong[] | null>(null);
   /** Songs already handed to the player, or there before the app opened (never played again). */
   const handed = useRef<Set<string> | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -251,7 +256,32 @@ function App() {
         />
       )}
 
-      {!toolsMissing && status && !findFor && (
+      {!toolsMissing && status && !findFor && batchSongs && (
+        <VideoBatch
+          songs={batchSongs}
+          status={status}
+          show={show}
+          onAdded={(batch) => setBatches((current) => [batch, ...current.filter((b) => b.id !== batch.id)])}
+          onBack={() => setBatchSongs(null)}
+        />
+      )}
+
+      {!toolsMissing && status && !findFor && !batchSongs && status.musicVideos && (
+        <div class="segments" role="group" style={{ alignSelf: "flex-start" }}>
+          <button aria-pressed={view === "links"} onClick={() => setView("links")}>
+            <Icon name="download" /> {t("mode.links")}
+          </button>
+          <button aria-pressed={view === "videos"} onClick={() => setView("videos")}>
+            <Icon name="search" /> {t("mode.videos")}
+          </button>
+        </div>
+      )}
+
+      {!toolsMissing && status && !findFor && !batchSongs && view === "videos" && (
+        <SongPicker status={status} show={show} onFind={(song) => setFindFor(song.id)} onBatch={setBatchSongs} />
+      )}
+
+      {!toolsMissing && status && !findFor && !batchSongs && view === "links" && (
         <>
           {status.musicVideos && <span class="muted small">{t("musicVideosNote")}</span>}
           <div class="paste">

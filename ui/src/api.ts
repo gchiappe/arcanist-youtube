@@ -198,6 +198,40 @@ export interface VideoSearchResult {
   candidates: VideoCandidate[];
 }
 
+/** A song of the libraries the user can add to. */
+export interface LibrarySong {
+  id: string;
+  title: string;
+  artist: string | null;
+  album: string;
+  year: number | null;
+  durationMs: number;
+  artworkId: string | null;
+  hasVideo: boolean;
+}
+
+export interface SongPage {
+  items: LibrarySong[];
+  /** The offset of the next page; null on the last one. */
+  next: number | null;
+  totalCount: number;
+}
+
+export interface SongQuery {
+  search?: string;
+  libraryId?: string;
+  withoutVideo?: boolean;
+  offset?: number;
+  first?: number;
+}
+
+/** The music videos of many songs: the video chosen for each. */
+export interface VideoDownloadsRequest {
+  items: { trackId: string; url: string; title?: string }[];
+  title?: string;
+  videoHeight?: number;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -249,6 +283,16 @@ export const api = {
   clear: () => call<{ removed: number }>("downloads", { method: "DELETE" }),
   preview: (url: string) => call<{ url: string }>("preview", { method: "POST", ...json({ url }) }),
   videoSearch: (trackId: string) => call<VideoSearchResult>(`video-search?trackId=${encodeURIComponent(trackId)}`),
+  songs: (query: SongQuery) => {
+    const params = new URLSearchParams();
+    if (query.search) params.set("search", query.search);
+    if (query.libraryId) params.set("libraryId", query.libraryId);
+    if (query.withoutVideo) params.set("withoutVideo", "true");
+    if (query.offset) params.set("offset", String(query.offset));
+    if (query.first) params.set("first", String(query.first));
+    return call<SongPage>(`songs?${params}`);
+  },
+  videoDownloads: (request: VideoDownloadsRequest) => call<DownloadBatch>("video-downloads", { method: "POST", ...json(request) }),
   me: () => call<MyYouTube>("me"),
   setPreferences: (playWhenDone: boolean) => call<MyYouTube>("me/preferences", { method: "PUT", ...json({ playWhenDone }) }),
   saveMyCookies: (text: string) => call<MyYouTube>("me/cookies", { method: "PUT", body: text, headers: { "Content-Type": "text/plain" } }),

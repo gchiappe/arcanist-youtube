@@ -569,6 +569,66 @@ public sealed class YouTubeTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Songs_without_a_music_video_are_listed_and_their_videos_come_in_one_batch()
+    {
+        Directory.CreateDirectory(Path.Combine(_music, "Band"));
+        AudioFixtures.WriteWav(Path.Combine(_music, "Band", "01 Song.wav"), 7, new FixtureTags(Title: "Song", Artist: "Band", Album: "Album", AlbumArtist: "Band"));
+        AudioFixtures.WriteWav(Path.Combine(_music, "Band", "02 Other.wav"), 8, new FixtureTags(Title: "Other", Artist: "Band", Album: "Album", AlbumArtist: "Band"));
+        foreach (var (id, seed) in new[] { ("videoone001", 7), ("videotwo002", 8) })
+        {
+            Video(id, $"Band - {id}", "BandVEVO", seed);
+            var clip = Path.Combine(_music + "-sources", $"{id}.mp4");
+            await File.WriteAllBytesAsync(clip, [0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109, (byte)seed], Cancel);
+            ((JsonObject)_catalog[$"https://www.youtube.com/watch?v={id}"]!)["video"] = clip;
+        }
+
+        await StartAsync();
+
+        var all = await GetAsync(_admin, "songs?withoutVideo=true");
+        Assert.Equal(2, all.GetProperty("totalCount").GetInt32());
+        var songs = all.GetProperty("items").EnumerateArray().ToDictionary(s => s.GetProperty("title").GetString()!, s => s.GetProperty("id").GetString()!);
+        Assert.Equal(["Other", "Song"], songs.Keys.Order());
+        var one = await GetAsync(_admin, "songs?search=oth");
+        Assert.Equal("Other", Assert.Single(one.GetProperty("items").EnumerateArray()).GetProperty("title").GetString());
+        Assert.Equal("Band", one.GetProperty("items")[0].GetProperty("artist").GetString());
+
+        // Only single videos.
+        var (refused, _) = await SendAsync(_admin, HttpMethod.Post, "video-downloads",
+            new { items = new[] { new { trackId = songs["Song"], url = "https://www.youtube.com/playlist?list=PLx" } } });
+        Assert.Equal(HttpStatusCode.BadRequest, refused);
+
+        var (status, batch) = await SendAsync(_admin, HttpMethod.Post, "video-downloads", new
+        {
+            title = "Music videos (2)",
+            items = new[]
+            {
+                new { trackId = songs["Song"], url = "https://www.youtube.com/watch?v=videoone001", title = "Band – Song" },
+                new { trackId = songs["Other"], url = "https://www.youtube.com/watch?v=videotwo002", title = "Band – Other" },
+            },
+        });
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(2, batch.GetProperty("items").GetArrayLength());
+        var done = await WaitAsync(_admin, batch.GetProperty("id").GetString()!);
+        Assert.All(done.GetProperty("items").EnumerateArray(), item => Assert.Equal("ADDED", item.GetProperty("status").GetString()));
+        Assert.True(File.Exists(Path.Combine(_music, "Band", "01 Song.mp4")));
+        Assert.True(File.Exists(Path.Combine(_music, "Band", "02 Other.mp4")));
+
+        // Scanned, both songs have their videos.
+        var left = all;
+        for (var tries = 0; tries < 100; tries++)
+        {
+            await _factory.WaitForScansAsync(_admin);
+            left = await GetAsync(_admin, "songs?withoutVideo=true");
+            if (left.GetProperty("totalCount").GetInt32() == 0)
+                break;
+            await Task.Delay(200, Cancel);
+        }
+
+        Assert.Equal(0, left.GetProperty("totalCount").GetInt32());
+        Assert.All((await GetAsync(_admin, "songs")).GetProperty("items").EnumerateArray(), s => Assert.True(s.GetProperty("hasVideo").GetBoolean()));
+    }
+
+    [Fact]
     public async Task Only_the_music_video_of_a_song_the_library_has_goes_next_to_it_at_the_quality_chosen()
     {
         Directory.CreateDirectory(Path.Combine(_music, "Band"));

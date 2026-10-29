@@ -56,6 +56,13 @@ to 2160p (4K UHD); YouTube gives the best it has up to that.
 A player's song menu also offers **Find the music video on YouTube**: the app searches YouTube for that song, ranks
 what it finds (title and artist, official channels, length) and adds the one chosen next to the song.
 
+The app's **Music videos for my songs** view does the same from the app: it lists the songs of the libraries you can
+add to (searched by title, artist or album, by default only those without a music video yet), and finds one song's
+video, or **many at once**: choose songs (or all those of a search, up to 200) and the app looks for each one's video,
+two at a time. The likeliest video of each is chosen when it looks right (60% or more); for the others, choose among
+the candidates or leave the song out. Then everything chosen downloads as one batch of the queue, each video next to
+its song, at the quality chosen.
+
 ## API
 
 The app is a client of the extension's REST API, under `/ext/youtube/api/v1` with Arcanist's Bearer token: see
@@ -63,7 +70,9 @@ The app is a client of the extension's REST API, under `/ext/youtube/api/v1` wit
 
 - `GET status`, `GET inspect?url=&tab=&after=`
 - `POST downloads` (one video with its `tags`, chosen `entries` of a list, or `all` but `exclude`; `video`,
-  `videoOnly`, `videoHeight` and `videoFor` for music videos), `GET video-search?trackId=`, `GET downloads`
+  `videoOnly`, `videoHeight` and `videoFor` for music videos), `GET video-search?trackId=`,
+  `GET songs?search=&libraryId=&withoutVideo=&offset=&first=` (the songs whose videos can be looked for),
+  `POST video-downloads` (many songs' music videos as one batch: `items` of `trackId` and `url`), `GET downloads`
   (each song in the library says the tracks it became, `trackIds`, once the library catalogues them),
   `GET downloads/{id}`, `POST downloads/{id}/cancel|retry`, `DELETE downloads/{id}`, `GET downloads/events` (SSE)
 - `POST preview` → a link to 30 seconds of audio

@@ -80,6 +80,7 @@ public sealed record DownloadSettings(
 /// <param name="TrackId">The track of its only file, once the library has catalogued it (as before 0.3; see <paramref name="TrackIds"/>).</param>
 /// <param name="ContentHashes">The audio of each file it put into the library (Arcanist's <c>ContentHash</c>), to find their tracks.</param>
 /// <param name="TrackIds">The track each of those files became (same order; null until the library catalogues it): the app plays them.</param>
+/// <param name="VideoFor">Only its video, as the music video of this track of the library (a batch of music videos, each for its song).</param>
 public sealed record DownloadItem(
     Guid Id,
     string VideoId,
@@ -99,7 +100,8 @@ public sealed record DownloadItem(
     int Files,
     DateTime UpdatedAt,
     IReadOnlyList<string>? ContentHashes = null,
-    IReadOnlyList<Guid?>? TrackIds = null)
+    IReadOnlyList<Guid?>? TrackIds = null,
+    Guid? VideoFor = null)
 {
     /// <summary>In the library, but some of its files are not catalogued yet (their tracks are still unknown).</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -633,7 +635,7 @@ public sealed class DownloadQueue(
                 Directory.Delete(folder, recursive: true);
 
             // Only a track's music video: it goes next to the track.
-            if (batch.VideoFor is { } videoFor)
+            if ((item.VideoFor ?? batch.VideoFor) is { } videoFor)
             {
                 var video = await BringVideoAsync(services, ytDlp, access, batch, item, videoFor, item.Title ?? "video", folder, token);
                 UpdateItem(batch.Id, item.Id, i => i with
