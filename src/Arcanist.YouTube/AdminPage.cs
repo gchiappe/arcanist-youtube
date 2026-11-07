@@ -9,7 +9,8 @@ namespace Arcanist.YouTube;
 /// The extension's settings in Arcanist's admin panel (Extensions › YouTube Audio), described for the panel to draw:
 /// the tools and their updates, what users may bring and how, and the server's YouTube cookies.
 /// </summary>
-public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, CookieStore cookies, YtDlp ytDlp, DownloadQueue queue) : IExtensionAdminPage
+public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, CookieStore cookies, YtDlp ytDlp, DownloadQueue queue, ResponsibleUse terms)
+    : IExtensionAdminPage
 {
     public async Task<AdminPage> GetAsync(AdminPageContext context, CancellationToken cancellationToken)
     {
@@ -34,8 +35,15 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
         toolBlocks.Add(AdminBlock.Status("ffmpeg", ffmpeg is null ? t.NoFfmpeg : t.FfmpegFromArcanist, ffmpeg is null ? AdminTone.Warning : AdminTone.Good));
 
         var formats = Enum.GetValues<AudioFormat>().Select(f => new AdminOption(f.ToString(), t.Format(f))).ToList();
+        // The responsible use notice first, until this administrator has read and accepted it; then at the end.
+        var accepted = terms.Accepted(context.UserId);
+        if (!accepted)
+            terms.Shown(context.UserId);
+        var notice = new AdminSection("terms", t.TermsTitle, t.TermsIntro, t.Terms.Select(line => AdminBlock.Notice(line, AdminTone.Warning)).ToList(),
+            accepted ? null : [new AdminAction("acceptTerms", t.AcceptTerms, AdminActionStyle.Primary)]);
         return new AdminPage(
         [
+            .. accepted ? Array.Empty<AdminSection>() : [notice],
             new AdminSection("tools", t.ToolsTitle, t.ToolsHelp, toolBlocks,
             [
                 new AdminAction("install", t.Install, AdminActionStyle.Primary),
@@ -57,7 +65,7 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
                 AdminBlock.Status(t.CookiesState, cookies.Present ? t.CookiesSaved : t.CookiesNone, cookies.Present ? AdminTone.Good : AdminTone.Neutral),
                 AdminBlock.Field("cookies", t.CookiesField, AdminFieldType.TextArea, "", t.CookiesFieldHelp, placeholder: "# Netscape HTTP Cookie File"),
             ], cookies.Present ? [new AdminAction("removeCookies", t.RemoveCookies, AdminActionStyle.Destructive, t.RemoveCookiesConfirm)] : null),
-            new AdminSection("legal", t.LegalTitle, null, [AdminBlock.Notice(t.Legal, AdminTone.Warning)]),
+            .. accepted ? [notice] : Array.Empty<AdminSection>(),
         ])
         {
             // Offered by the panel right after installing the extension, with the administrator's consent.
@@ -122,6 +130,8 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
                 foreach (var kind in Enum.GetValues<ToolKind>())
                     await tools.LatestAsync(kind, cancellationToken);
                 return AdminPageResult.Done(t.Checked);
+            case "acceptTerms":
+                return terms.Accept(context.UserId) ? AdminPageResult.Done(t.TermsAccepted) : AdminPageResult.Failed(t.TermsTooSoon);
             case "removeCookies":
                 cookies.Remove();
                 return AdminPageResult.Done(t.CookiesRemoved);
@@ -205,9 +215,13 @@ public sealed class YouTubeAdminPage(ToolManager tools, SettingsStore settings, 
         public string CookiesRemoved => S("Cookies quitadas", "Cookies removed");
         public string InvalidCookies => S("No parece un cookies.txt de YouTube.", "That does not look like a YouTube cookies.txt.");
 
-        public string LegalTitle => S("Uso responsable", "Responsible use");
-        public string Legal => S("Descarga solo contenido que tengas derecho a guardar. Respetar los términos de cada sitio y los derechos de autor es responsabilidad de quien descarga.",
-            "Download only content you have the right to keep. Respecting each site's terms and copyright is up to whoever downloads.");
+        public string TermsTitle => S("Uso responsable", "Responsible use");
+        public string TermsIntro => S("Léelo antes de usar la extensión. Tus usuarios lo aceptan en la app la primera vez que la abren.",
+            "Read it before using the extension. Your users accept it in the app the first time they open it.");
+        public IReadOnlyList<string> Terms => Es ? ResponsibleUseText.Spanish : ResponsibleUseText.English;
+        public string AcceptTerms => S("Lo he leído y lo acepto", "I have read it and accept it");
+        public string TermsAccepted => S("Gracias: el aviso queda al final de esta página.", "Thank you: the notice stays at the end of this page.");
+        public string TermsTooSoon => S("Tómate unos segundos para leerlo antes de aceptarlo.", "Take a few seconds to read it before accepting it.");
 
         public string Saved => S("Ajustes guardados", "Settings saved");
         public string Invalid => S("Valor no válido", "Invalid value");

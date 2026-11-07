@@ -2,6 +2,7 @@ import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api, ApiError, watchDownloads, type DownloadBatch, type DownloadRequest, type LibrarySong, type MyYouTube, type Status } from "./api";
 import { host } from "./host";
+import { Explore } from "./explore";
 import { errorText, t } from "./i18n";
 import { Icon } from "./icons";
 import { LinkCard, chosenCount, initFrom, newLink, requestFor, type LinkState } from "./link";
@@ -9,6 +10,7 @@ import { Options, loadOptions, saveOptions, type Choices } from "./options";
 import { Queue, awaitsTracks, tracksOf } from "./queue";
 import { MySettings } from "./settings";
 import { SongPicker, VideoBatch } from "./songs";
+import { Terms } from "./terms";
 import { VideoFinder, videoTrack } from "./video";
 import "./styles.css";
 
@@ -40,8 +42,12 @@ function App() {
   const [mine, setMine] = useState(false);
   /** A library song whose music video is looked for (opened from a player's song menu). */
   const [findFor, setFindFor] = useState<string | null>(videoTrack());
-  /** Links to bring, or songs of the library whose music videos are looked for. */
-  const [view, setView] = useState<"links" | "videos">("links");
+  /** Links to bring, YouTube Music to explore, or songs of the library whose music videos are looked for. */
+  const [view, setView] = useState<"links" | "explore" | "videos">("links");
+  /** The link shown came from Explore: offer to go back to it. */
+  const [fromExplore, setFromExplore] = useState(false);
+  /** The responsible use notice, opened from the footer. */
+  const [readTerms, setReadTerms] = useState(false);
   /** Songs whose music videos are looked for at once. */
   const [batchSongs, setBatchSongs] = useState<LibrarySong[] | null>(null);
   /** Songs whose music videos were sent to the queue in this visit (the list says they are on their way). */
@@ -185,7 +191,17 @@ function App() {
   const clear = () => {
     setText("");
     setLinks([]);
+    setFromExplore(false);
     input.current?.focus();
+  };
+
+  /** Something chosen in Explore: read like a pasted link, to choose what to bring and where. */
+  const openFromExplore = (url: string) => {
+    setView("links");
+    setFromExplore(true);
+    setText(url);
+    void inspect(url);
+    window.scrollTo(0, 0);
   };
 
   const requests = useMemo(
@@ -203,7 +219,10 @@ function App() {
       setBatches((current) => [...sent.filter((b) => !current.some((c) => c.id === b.id)), ...current]);
       show({ text: t("added") });
       host.notify("success", t("added"));
+      // Chosen in Explore: back to it, to go on exploring.
+      const backToExplore = fromExplore;
       clear();
+      if (backToExplore) setView("explore");
     } catch (error) {
       show({ text: errorOf(error), error: true });
     } finally {
@@ -286,14 +305,26 @@ function App() {
         />
       )}
 
-      {!toolsMissing && status && !findFor && !batchSongs && status.musicVideos && (
-        <div class="segments" role="group" style={{ alignSelf: "flex-start" }}>
+      {!toolsMissing && status && !findFor && !batchSongs && (
+        <div class="segments" role="group" style={{ alignSelf: "flex-start", flexWrap: "wrap" }}>
           <button aria-pressed={view === "links"} onClick={() => setView("links")}>
             <Icon name="download" /> {t("mode.links")}
           </button>
-          <button aria-pressed={view === "videos"} onClick={() => setView("videos")}>
-            <Icon name="search" /> {t("mode.videos")}
+          <button aria-pressed={view === "explore"} onClick={() => setView("explore")}>
+            <Icon name="search" /> {t("mode.explore")}
           </button>
+          {status.musicVideos && (
+            <button aria-pressed={view === "videos"} onClick={() => setView("videos")}>
+              <Icon name="play" /> {t("mode.videos")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Kept while a link chosen in it is shown, so going back finds it as it was. */}
+      {!toolsMissing && status && !findFor && !batchSongs && (
+        <div style={{ display: view === "explore" ? "contents" : "none" }}>
+          <Explore show={show} onOpen={openFromExplore} />
         </div>
       )}
 
@@ -320,7 +351,14 @@ function App() {
 
       {!toolsMissing && status && !findFor && !batchSongs && view === "links" && (
         <>
-          {status.musicVideos && <span class="muted small">{t("musicVideosNote")}</span>}
+          {fromExplore && (
+            <div>
+              <button class="btn small ghost" onClick={() => setView("explore")}>
+                <span aria-hidden="true">←</span> {t("explore.back")}
+              </button>
+            </div>
+          )}
+          {status.musicVideos && !fromExplore && <span class="muted small">{t("musicVideosNote")}</span>}
           <div class="paste">
             <textarea
               ref={input}
@@ -379,8 +417,24 @@ function App() {
       <Queue batches={batches} setBatches={setBatches} show={show} canPlay={host.embedded} />
 
       <p class="footer">
-        {t("legal")} · v{status?.version}
+        {t("legal")} ·{" "}
+        <button class="link" onClick={() => setReadTerms(true)}>
+          {t("terms.show")}
+        </button>{" "}
+        · v{status?.version}
       </p>
+
+      {/* Before anything else, once per user: what may be downloaded. */}
+      {me && (!me.termsAccepted || readTerms) && (
+        <Terms
+          mustAccept={!me.termsAccepted}
+          onAccepted={(accepted) => {
+            setMe(accepted);
+            setReadTerms(false);
+          }}
+          onClose={() => setReadTerms(false)}
+        />
+      )}
 
       {toast_}
     </div>

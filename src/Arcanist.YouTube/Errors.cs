@@ -56,6 +56,12 @@ public static class ErrorCodes
     /// <summary>Not a cookies.txt (Netscape format) with YouTube's cookies.</summary>
     public const string InvalidCookies = "invalid_cookies";
 
+    /// <summary>YouTube Music could not be read (search, artist, new releases or charts): try again later.</summary>
+    public const string ExploreFailed = "explore_failed";
+
+    /// <summary>The responsible use notice was accepted before it could be read: read it, then accept.</summary>
+    public const string TermsTooSoon = "terms_too_soon";
+
     /// <summary>The download is not in a state that allows that.</summary>
     public const string WrongState = "wrong_state";
 }

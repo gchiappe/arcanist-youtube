@@ -89,7 +89,56 @@ const en = {
   musicVideosNote: "To find the music videos of songs you already have, open \"Music videos for my songs\": one by one, or many at once.",
   mode: {
     links: "From a link",
+    explore: "Explore",
     videos: "Music videos for my songs",
+  },
+  explore: {
+    search: "Search YouTube Music",
+    searchHint: "A song, an album or an artist",
+    kinds: { all: "All", songs: "Songs", albums: "Albums", artists: "Artists", videos: "Videos", playlists: "Playlists" },
+    sections: { songs: "Songs", albums: "Albums and singles", artists: "Artists", videos: "Videos", playlists: "Playlists" },
+    nothing: "Nothing found.",
+    searching: "Searching…",
+    myArtists: "New from your artists",
+    myArtistsHelp: "This year's and last year's albums and singles by the artists with the most songs in your libraries, without those you have.",
+    myArtistsLoading: "Looking at your artists on YouTube Music… (it takes a moment the first time)",
+    myArtistsNone: "Nothing new from your artists that you do not have.",
+    myArtistsEmpty: "Add some music to your libraries first: the news come from your artists.",
+    myArtistsChecked: "From {count} artists",
+    refresh: "Look again",
+    newReleases: "New releases",
+    charts: "Charts",
+    country: "Country",
+    world: "Worldwide",
+    showMore: "Show more",
+    showLess: "Show less",
+    open: "Add…",
+    openHelp: "Choose what to bring and where, as with a pasted link",
+    back: "Back to explore",
+    backTo: "Back",
+    owned: "You have it",
+    ownedAlbum: "You have this album",
+    loadFailed: "YouTube Music could not be read. Try again in a moment.",
+  },
+  owned: {
+    title: "You already have this song",
+    help: "It is in your libraries (by its name and artist, on any album). Bring it again only if you want another copy.",
+    addAnyway: "Add it anyway (another copy)",
+    listNote: "The songs you already have are left out; you can still choose them.",
+  },
+  terms: {
+    title: "Before you start: responsible use",
+    intro: "This app brings audio from YouTube and other sites into your library. Please read this:",
+    lines: [
+      "Download only what belongs to you or what you have the right to keep: your own music, music its author offers for download, or music in the public domain.",
+      "YouTube's Terms of Service do not allow downloading its content except where YouTube offers it. Complying with them, and with your country's copyright, is up to whoever downloads.",
+      "This extension is not YouTube's or Google's, nor endorsed by them. It hosts and shares no music: what you bring stays on your server only.",
+      "If you are not sure you have the right to keep something, do not download it.",
+    ],
+    wait: "Read it ({seconds})",
+    accept: "I understand and accept",
+    left: "You need to accept the notice to use this app.",
+    show: "Responsible use",
   },
   pick: {
     search: "Search your songs",
@@ -237,6 +286,8 @@ const en = {
     read_only: "That library cannot take files.",
     duplicate: "Already there.",
     network: "The server did not answer.",
+    explore_failed: "YouTube Music could not be read. Try again in a moment.",
+    terms_too_soon: "Take a few seconds to read the notice before accepting it.",
     unknown: "Something went wrong.",
   },
 };
@@ -332,7 +383,56 @@ const es: Dictionary = {
   musicVideosNote: "Para buscar los videoclips de canciones que ya tienes, abre «Videoclips de mis canciones»: de una en una o muchas a la vez.",
   mode: {
     links: "Desde un enlace",
+    explore: "Explorar",
     videos: "Videoclips de mis canciones",
+  },
+  explore: {
+    search: "Buscar en YouTube Music",
+    searchHint: "Una canción, un álbum o un artista",
+    kinds: { all: "Todo", songs: "Canciones", albums: "Álbumes", artists: "Artistas", videos: "Vídeos", playlists: "Listas" },
+    sections: { songs: "Canciones", albums: "Álbumes y sencillos", artists: "Artistas", videos: "Vídeos", playlists: "Listas" },
+    nothing: "No se encontró nada.",
+    searching: "Buscando…",
+    myArtists: "Novedades de tus artistas",
+    myArtistsHelp: "Los álbumes y sencillos de este año y el anterior de los artistas con más canciones en tus bibliotecas, sin los que ya tienes.",
+    myArtistsLoading: "Mirando a tus artistas en YouTube Music… (la primera vez tarda un poco)",
+    myArtistsNone: "No hay nada nuevo de tus artistas que no tengas.",
+    myArtistsEmpty: "Añade primero música a tus bibliotecas: las novedades salen de tus artistas.",
+    myArtistsChecked: "De {count} artistas",
+    refresh: "Volver a mirar",
+    newReleases: "Lanzamientos nuevos",
+    charts: "Listas de éxitos",
+    country: "País",
+    world: "Todo el mundo",
+    showMore: "Ver más",
+    showLess: "Ver menos",
+    open: "Añadir…",
+    openHelp: "Elige qué traer y dónde, como con un enlace pegado",
+    back: "Volver a explorar",
+    backTo: "Atrás",
+    owned: "Ya la tienes",
+    ownedAlbum: "Ya tienes este álbum",
+    loadFailed: "No se pudo leer YouTube Music. Inténtalo en un momento.",
+  },
+  owned: {
+    title: "Ya tienes esta canción",
+    help: "Está en tus bibliotecas (por su nombre y artista, en cualquier álbum). Tráela otra vez solo si quieres otra copia.",
+    addAnyway: "Añadirla de todos modos (otra copia)",
+    listNote: "Las canciones que ya tienes quedan sin marcar; puedes elegirlas igualmente.",
+  },
+  terms: {
+    title: "Antes de empezar: uso responsable",
+    intro: "Esta app trae audio de YouTube y otros sitios a tu biblioteca. Por favor, lee esto:",
+    lines: [
+      "Descarga solo lo que te pertenece o tienes derecho a guardar: tu propia música, la que su autor ofrece para descargar o la que está en el dominio público.",
+      "Los Términos del Servicio de YouTube no permiten descargar su contenido salvo donde YouTube lo ofrece. Cumplirlos, y respetar los derechos de autor de tu país, es responsabilidad de quien descarga.",
+      "Esta extensión no es de YouTube ni de Google, ni está avalada por ellos. No aloja ni comparte música: lo que traes queda solo en tu servidor.",
+      "Si no estás seguro de tener derecho a guardar algo, no lo descargues.",
+    ],
+    wait: "Léelo ({seconds})",
+    accept: "Lo entiendo y lo acepto",
+    left: "Necesitas aceptar el aviso para usar esta app.",
+    show: "Uso responsable",
   },
   pick: {
     search: "Busca en tus canciones",
@@ -480,6 +580,8 @@ const es: Dictionary = {
     read_only: "Esa biblioteca no admite archivos.",
     duplicate: "Ya estaba.",
     network: "El servidor no respondió.",
+    explore_failed: "No se pudo leer YouTube Music. Inténtalo en un momento.",
+    terms_too_soon: "Tómate unos segundos para leer el aviso antes de aceptarlo.",
     unknown: "Algo salió mal.",
   },
 };
@@ -499,6 +601,13 @@ export function t(key: string, values: Record<string, string | number> = {}): st
 }
 
 /** The second part of a pair (a format's explanation). */
+/** A list of texts by its dotted key (the lines of a notice). */
+export function list(key: string): string[] {
+  let value: unknown = dictionary();
+  for (const part of key.split(".")) value = (value as Record<string, unknown> | undefined)?.[part];
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
 export function help(key: string): string {
   let value: unknown = dictionary();
   for (const part of key.split(".")) value = (value as Record<string, unknown> | undefined)?.[part];

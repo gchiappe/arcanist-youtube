@@ -39,6 +39,37 @@ library and the cover. Downloads go on in the server; their progress shows live.
 downloads plays what is already in the library (one song, a list, or everything finished); clearing the finished ones
 asks first.
 
+### Responsible use
+
+The first time each user opens the app, it shows a short notice: download only what belongs to you or what you have
+the right to keep; YouTube's Terms of Service do not allow downloading its content except where YouTube offers it, and
+complying with them (and with copyright) is up to whoever downloads; the extension is not YouTube's or Google's. It can
+be accepted only after it has been on screen for a few seconds (the app counts them down, the server checks them), once
+per user. Administrators see it at the top of **Extensions › YouTube Audio** until they accept it; it stays at the end
+of that page, and in the app's footer.
+
+### Songs you already have
+
+Before anything is downloaded again, the app says when you already have a song: a song is the same when its name,
+without what says which pressing or kind of video it is ("(Official Video)", "(Remastered 2011)", "feat. …"), and one of
+its artists are the same, **on any album** (YouTube often names the single or another album than your library).
+"Live", "Acoustic", "Remix" and the like stay in the name: those are other songs. A single video shows the copies you
+have (album, year, format, library) and is only brought again if you tick **Add it anyway**; in a list those songs start
+unchosen, also with **All**.
+
+### Explore
+
+**Explore** searches YouTube Music (songs, albums, artists, videos and playlists, or all at once) and opens artists'
+pages: their songs, albums, singles, videos and the artists their fans also like. Before searching it shows **New from
+your artists** (this year's and last year's albums and singles by the 20 artists with the most songs in your libraries,
+without those you have), **New releases** and the **Charts** of the country chosen. Everything you have is marked;
+choosing a song, album or list opens it as a pasted link, where you choose what to bring and where, and **Back to
+explore** returns to where you were.
+
+It reads YouTube Music through the API of YouTube Music's own web app (no account, nothing downloaded); pictures go
+through the server as everywhere else in the app. Answers are kept for a while (15 minutes for searches, 6 hours for
+pages and news).
+
 ### Music videos
 
 With Arcanist 0.1.0-alpha.11 or later (music videos), the app asks what to bring from each link:

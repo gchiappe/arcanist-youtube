@@ -1,9 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
-using Arcanist.Core.Application.Catalog;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Arcanist.YouTube;
 
@@ -13,8 +11,8 @@ public sealed record ChannelTab(string Id, string Title);
 /// <summary>A song of a list (playlist, album, channel tab).</summary>
 /// <param name="Index">Its place in the list, from 1.</param>
 /// <param name="Available">False for private or deleted videos: they cannot be downloaded.</param>
-/// <param name="InLibrary">The user already has it: downloaded with this extension, or a song with its title and
-/// artist is in their libraries. The app leaves those unchosen.</param>
+/// <param name="InLibrary">The user already has it: downloaded with this extension, or a song with its name and one of
+/// its artists is in their libraries, on any album (<see cref="OwnedSongs"/>). The app leaves those unchosen.</param>
 public sealed record LinkEntry(
     string Id,
     string Url,
@@ -38,6 +36,7 @@ public sealed record LinkEntry(
 /// <param name="Tabs">For a channel: its tabs; <c>tab</c> is the one listed.</param>
 /// <param name="NextCursor">More songs: pass as <c>after</c>.</param>
 /// <param name="Truncated">A mix (endless) cut to its first songs.</param>
+/// <param name="Owned">For a video: the copies of its song the user already has, so they decide before bringing it again.</param>
 public sealed record LinkPreview(
     string Url,
     LinkKind Kind,
@@ -59,13 +58,14 @@ public sealed record LinkPreview(
     IReadOnlyList<LinkEntry>? Entries,
     string? NextCursor,
     bool Truncated,
-    bool InLibrary);
+    bool InLibrary,
+    IReadOnlyList<OwnedCopy>? Owned = null);
 
 /// <summary>
 /// Reads links for the app: a video's details with the tags proposed, or a list's songs a page at a time (a channel
 /// can have thousands), marking those the user already has.
 /// </summary>
-public sealed class Inspector(YtDlp ytDlp, Images images, DownloadQueue downloads, SettingsStore settings, IServiceProvider services)
+public sealed class Inspector(YtDlp ytDlp, Images images, DownloadQueue downloads, SettingsStore settings, OwnedSongs owned)
 {
     public const int PageSize = 100;
     public const int MixLimit = 50;
@@ -76,8 +76,9 @@ public sealed class Inspector(YtDlp ytDlp, Images images, DownloadQueue download
             ? new ExtensionException(ErrorCodes.SiteNotAllowed, 400)
             : new ExtensionException(ErrorCodes.InvalidLink, 400));
 
-    public async Task<LinkPreview> InspectAsync(Guid user, string? url, string? tab, string? after, CancellationToken cancellationToken)
+    public async Task<LinkPreview> InspectAsync(Arcanist.Core.Auth.UserAccess access, string? url, string? tab, string? after, CancellationToken cancellationToken)
     {
+        var user = access.UserId;
         using var acting = YtDlp.ActingFor(user);
         var link = Classify(url, settings.Current);
         var start = Cursor(after);
@@ -106,11 +107,13 @@ public sealed class Inspector(YtDlp ytDlp, Images images, DownloadQueue download
         if (!isList)
         {
             var tags = TagGuesser.Guess(info);
-            var have = await HaveAsync(user, [(link.Id ?? TagGuesser.Text(info, "id") ?? "", tags)], cancellationToken);
+            var key = link.Id ?? TagGuesser.Text(info, "id") ?? "";
+            var copies = await owned.SongsAsync(access, [new SongQuery(key, tags.Title, tags.Artist)], cancellationToken);
+            var downloaded = downloads.DownloadedIds(user, [key]).Any();
             return new LinkPreview(link.Url, link.Kind == LinkKind.Other ? LinkKind.Other : LinkKind.Video, link.Id ?? TagGuesser.Text(info, "id"),
                 link.Music, link.ListUrl, title, uploader, images.Link(Thumbnail(info, large: true)), null, TagGuesser.Number(info, "duration"),
                 FormatDate(date), (long?)TagGuesser.Number(info, "view_count"), null, tags, (info["chapters"] as JsonArray)?.Count ?? 0,
-                null, null, null, null, false, have.Count > 0);
+                null, null, null, null, false, downloaded || copies.ContainsKey(key), copies.GetValueOrDefault(key));
         }
 
         var album = link.Kind == LinkKind.Album ? AlbumTitle(title) : null;
@@ -133,8 +136,8 @@ public sealed class Inspector(YtDlp ytDlp, Images images, DownloadQueue download
                 TagGuesser.Guess(entry, album, album is null ? null : index));
         }).ToList();
 
-        var owned = await HaveAsync(user, entries.Select(e => (e.Id, e.Tags)).ToList(), cancellationToken);
-        entries = entries.Select(e => owned.Contains(e.Id) ? e with { InLibrary = true } : e).ToList();
+        var have = await HaveAsync(access, entries.Select(e => (e.Id, e.Tags)).ToList(), cancellationToken);
+        entries = entries.Select(e => have.Contains(e.Id) ? e with { InLibrary = true } : e).ToList();
 
         var truncated = link.Kind == LinkKind.Mix && raw.Count >= MixLimit - start + 1;
         var more = link.Kind == LinkKind.Mix ? last < MixLimit && raw.Count == PageSize
@@ -160,26 +163,12 @@ public sealed class Inspector(YtDlp ytDlp, Images images, DownloadQueue download
         return UrlClassifier.ChannelTabs.Where(found.Contains).Select(id => new ChannelTab(id, id)).ToList();
     }
 
-    /// <summary>The ids of those the user already has: downloaded here, or with the same title and artist in a library.</summary>
-    private async Task<HashSet<string>> HaveAsync(Guid user, IReadOnlyList<(string Id, SongTags Tags)> songs, CancellationToken cancellationToken)
+    /// <summary>The ids of those the user already has: downloaded here, or the same song in a library (<see cref="OwnedSongs"/>).</summary>
+    private async Task<HashSet<string>> HaveAsync(Arcanist.Core.Auth.UserAccess access, IReadOnlyList<(string Id, SongTags Tags)> songs, CancellationToken cancellationToken)
     {
-        var have = downloads.DownloadedIds(user, songs.Select(s => s.Id)).ToHashSet(StringComparer.Ordinal);
-        var candidates = songs.Where(s => !have.Contains(s.Id) && s.Tags.Title is not null && s.Tags.Artist is not null)
-            .Select(s => new TrackCandidate(s.Id, null, null, null, s.Tags.Title, s.Tags.Artist, s.Tags.Album, null, null, null))
-            .Take(TrackMatchService.MaxCandidates).ToList();
-        if (candidates.Count > 0)
-        {
-            try
-            {
-                var matches = await services.GetRequiredService<TrackMatchService>().MatchAsync(new MatchTracksInput(candidates, null), cancellationToken);
-                have.UnionWith(matches.Where(m => m.TrackId is not null).Select(m => m.Key));
-            }
-            catch (Arcanist.Core.Application.ArcanistException)
-            {
-                // Matching is a nicety: without it, nothing is marked.
-            }
-        }
-
+        var have = downloads.DownloadedIds(access.UserId, songs.Select(s => s.Id)).ToHashSet(StringComparer.Ordinal);
+        var asked = songs.Where(s => !have.Contains(s.Id)).Select(s => new SongQuery(s.Id, s.Tags.Title, s.Tags.Artist)).ToList();
+        have.UnionWith((await owned.SongsAsync(access, asked, cancellationToken)).Keys);
         return have;
     }
 

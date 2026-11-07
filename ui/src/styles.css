@@ -819,3 +819,230 @@ details[open] > summary::before {
   height: 15px;
   vertical-align: -3px;
 }
+
+/* ── Explore ─────────────────────────────────────────────────────────────── */
+
+.explore {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.explore .paste .input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  font-size: 15px;
+}
+
+.explore h2,
+.explore h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.explore h3 {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.results {
+  display: grid;
+}
+
+.results .entry {
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  cursor: default;
+}
+
+.results .entry .mini {
+  width: 48px;
+  height: 48px;
+  aspect-ratio: 1;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  text-align: start;
+  cursor: pointer;
+}
+
+.tile:hover:not(:disabled),
+.tile:focus-visible {
+  background: var(--surface);
+}
+
+.tile .art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface);
+}
+
+.tile.artist .art {
+  border-radius: 50%;
+}
+
+.tile .art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile .art svg {
+  position: relative;
+  z-index: 1;
+}
+
+.tile .name {
+  font-weight: 600;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.tile.artist .name {
+  text-align: center;
+}
+
+.owned-badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.pill svg {
+  width: 12px;
+  height: 12px;
+  vertical-align: -2px;
+}
+
+.artist-head {
+  grid-template-columns: 96px minmax(0, 1fr);
+  display: grid;
+  align-items: center;
+}
+
+.round {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface);
+}
+
+.clamp {
+  margin: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+button.link:hover {
+  color: var(--accent);
+}
+
+/* ── Songs the user already has ──────────────────────────────────────────── */
+
+.owned {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.copies {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.copies li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.copies .mini {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--surface);
+  flex: none;
+}
+
+/* ── Responsible use ─────────────────────────────────────────────────────── */
+
+.terms {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-inline-start: 20px;
+}
+
+@media (max-width: 520px) {
+  /* The search box gets the room: the button keeps only its icon. */
+  .explore .paste .btn.big span {
+    display: none;
+  }
+
+  .tiles {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  }
+
+  .results .entry {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .results .entry > .row {
+    grid-column: 2;
+  }
+
+  .artist-head {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .round {
+    width: 64px;
+    height: 64px;
+  }
+}

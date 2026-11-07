@@ -156,10 +156,12 @@ public static class Files
 
 /// <summary>What a user set for themselves.</summary>
 /// <param name="PlayWhenDone">The app asks the player to play each song as it is added to the library.</param>
-public sealed record UserPreference(bool PlayWhenDone);
+/// <param name="TermsVersion">The version of the responsible use notice the user accepted (0: none).</param>
+public sealed record UserPreference(bool PlayWhenDone, int TermsVersion = 0, DateTime? TermsAcceptedAt = null);
 
 /// <param name="HasCookies">The user has cookies of their own (used for their links instead of the server's).</param>
-public sealed record MyYouTube(bool HasCookies, bool PlayWhenDone);
+/// <param name="TermsAccepted">The user accepted the current responsible use notice; until then the app shows it first.</param>
+public sealed record MyYouTube(bool HasCookies, bool PlayWhenDone, bool TermsAccepted = true);
 
 public sealed record MyPreferences(bool PlayWhenDone);
 
@@ -195,4 +197,55 @@ public sealed class UserPreferences(ExtensionPaths paths)
             Files.WriteAllTextAtomically(FileOf(user), JsonSerializer.Serialize(preference, Json.Options));
         }
     }
+}
+
+/// <summary>
+/// The notice of responsible use each user accepts once (in the app, or an administrator in the panel's page): only
+/// what they have the right to keep, and YouTube's terms are theirs to respect. It cannot be accepted before it has been
+/// on screen for <see cref="ReadingTime"/>: the app counts it down, and the server checks it.
+/// </summary>
+public sealed class ResponsibleUse(UserPreferences preferences)
+{
+    /// <summary>Raise it when the notice says something new: everyone reads it again.</summary>
+    public const int Version = 1;
+
+    public static readonly TimeSpan ReadingTime = TimeSpan.FromSeconds(8);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, DateTime> _shown = new();
+
+    public bool Accepted(Guid user) => preferences.Of(user).TermsVersion >= Version;
+
+    /// <summary>The notice is on the user's screen from now (the first time counts).</summary>
+    public void Shown(Guid user) => _shown.TryAdd(user, DateTime.UtcNow);
+
+    /// <summary>Accepts it, if it was shown long enough ago to be read.</summary>
+    public bool Accept(Guid user)
+    {
+        if (Accepted(user))
+            return true;
+        if (!_shown.TryGetValue(user, out var shown) || DateTime.UtcNow - shown < ReadingTime - TimeSpan.FromSeconds(1))
+            return false;
+        preferences.Save(user, preferences.Of(user) with { TermsVersion = Version, TermsAcceptedAt = DateTime.UtcNow });
+        return true;
+    }
+}
+
+/// <summary>The words of the responsible use notice in the panel (the app has its own copy, in <c>ui/src/i18n.ts</c>).</summary>
+public static class ResponsibleUseText
+{
+    public static readonly IReadOnlyList<string> Spanish =
+    [
+        "Descarga solo lo que te pertenece o tienes derecho a guardar: tu propia música, la que su autor ofrece para descargar o la que está en el dominio público.",
+        "Los Términos del Servicio de YouTube no permiten descargar su contenido salvo donde YouTube lo ofrece. Cumplirlos, y respetar los derechos de autor de tu país, es responsabilidad de quien descarga.",
+        "Esta extensión no es de YouTube ni de Google, ni está avalada por ellos. No aloja ni comparte música: lo que traes queda solo en tu servidor.",
+        "Si no estás seguro de tener derecho a guardar algo, no lo descargues.",
+    ];
+
+    public static readonly IReadOnlyList<string> English =
+    [
+        "Download only what belongs to you or what you have the right to keep: your own music, music its author offers for download, or music in the public domain.",
+        "YouTube's Terms of Service do not allow downloading its content except where YouTube offers it. Complying with them, and with your country's copyright, is up to whoever downloads.",
+        "This extension is not YouTube's or Google's, nor endorsed by them. It hosts and shares no music: what you bring stays on your server only.",
+        "If you are not sure you have the right to keep something, do not download it.",
+    ];
 }

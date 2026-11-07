@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api, ApiError, type DownloadRequest, type LinkEntry, type LinkPreview, type SongTags, type Status } from "./api";
+import { api, ApiError, type DownloadRequest, type LinkEntry, type LinkPreview, type OwnedCopy, type SongTags, type Status } from "./api";
 import { date, duration, errorText, number, t } from "./i18n";
 import { Icon } from "./icons";
 import type { Choices } from "./options";
@@ -26,6 +26,8 @@ export interface LinkState {
   split: boolean;
   filter: string;
   loadingMore: boolean;
+  /** A song the user already has: bring another copy all the same. */
+  addAnyway: boolean;
 }
 
 let counter = 0;
@@ -45,6 +47,7 @@ export function newLink(input: string): LinkState {
     split: false,
     filter: "",
     loadingMore: false,
+    addAnyway: false,
   };
 }
 
@@ -65,12 +68,14 @@ export function initFrom(preview: LinkPreview): Partial<LinkState> {
     tab: preview.tab,
     split: false,
     filter: "",
+    addAnyway: false,
   };
 }
 
 export function chosenCount(link: LinkState): number {
   if (!link.preview || link.loading) return 0;
-  if (!isList(link.preview)) return 1;
+  // A song the user has is only brought again when they say so.
+  if (!isList(link.preview)) return link.preview.owned?.length && !link.addAnyway ? 0 : 1;
   if (link.allMode) return Math.max(0, (link.preview.entryCount ?? link.entries.length) - link.excluded.size);
   return link.chosen.size;
 }
@@ -135,7 +140,7 @@ function usePlaying(): string | null {
   return playing;
 }
 
-function Listen({ url, show, small }: { url: string; show: (toast: Toast) => void; small?: boolean }) {
+export function Listen({ url, show, small }: { url: string; show: (toast: Toast) => void; small?: boolean }) {
   const current = usePlaying();
   const [loading, setLoading] = useState(false);
   const on = current === url;
@@ -281,6 +286,18 @@ function VideoCard({ link, status, update, remove, show }: CardProps) {
           </div>
         </div>
       </div>
+
+      {!!preview.owned?.length && (
+        <div class="owned" role="status">
+          <strong>{t("owned.title")}</strong>
+          <span class="muted small">{t("owned.help")}</span>
+          <OwnedCopies copies={preview.owned} />
+          <label class="check">
+            <input type="checkbox" checked={link.addAnyway} onChange={(e) => update((l) => ({ ...l, addAnyway: (e.target as HTMLInputElement).checked }))} />
+            {t("owned.addAnyway")}
+          </label>
+        </div>
+      )}
 
       {preview.listUrl && (
         <div class="row">
@@ -463,6 +480,7 @@ function ListCard({ link, update, remove, show }: CardProps) {
       )}
 
       {preview.truncated && <div class="notice">{t("truncated")}</div>}
+      {link.entries.some((e) => e.inLibrary) && <span class="muted small">{t("owned.listNote")}</span>}
 
       {(preview.kind === "ALBUM" || preview.kind === "PLAYLIST") && (
         <div class="grid2">
@@ -489,7 +507,12 @@ function ListCard({ link, update, remove, show }: CardProps) {
           value={link.filter}
           onInput={(e) => update((l) => ({ ...l, filter: (e.target as HTMLInputElement).value }))}
         />
-        <button class="btn small" aria-pressed={link.allMode} onClick={() => update((l) => ({ ...l, allMode: true, excluded: new Set() }))}>
+        <button
+          class="btn small"
+          aria-pressed={link.allMode}
+          // Every song, but those the user already has (they can still choose them).
+          onClick={() => update((l) => ({ ...l, allMode: true, excluded: new Set(l.entries.filter((e) => e.inLibrary).map((e) => e.id)) }))}
+        >
           <Icon name="check" /> {t("selectAll", { count: number(total) })}
         </button>
         <button class="btn small" onClick={() => update((l) => ({ ...l, allMode: false, chosen: new Set(), excluded: new Set() }))}>
@@ -540,5 +563,26 @@ function ListCard({ link, update, remove, show }: CardProps) {
           : t("selected", { count: link.chosen.size, time: duration(time) })}
       </div>
     </div>
+  );
+}
+
+/** The copies of a song the user has: album, year, format and libraries. */
+export function OwnedCopies({ copies }: { copies: OwnedCopy[] }) {
+  return (
+    <ul class="copies">
+      {copies.map((copy) => (
+        <li key={copy.trackId}>
+          {copy.artworkId ? <img class="mini" src={`/rest/v1/artwork/${copy.artworkId}?size=64`} alt="" loading="lazy" /> : <span class="mini" />}
+          <span class="grow ellipsis">
+            <strong>{copy.title}</strong> · {copy.artist}
+            <span class="muted small">
+              {" "}
+              — {[copy.album, copy.year, duration(copy.durationMs / 1000), copy.libraries.join(", ")].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+          {copy.format && <span class={`pill${copy.lossless ? " accent" : ""}`}>{copy.lossless ? "LOSSLESS" : copy.format}</span>}
+        </li>
+      ))}
+    </ul>
   );
 }

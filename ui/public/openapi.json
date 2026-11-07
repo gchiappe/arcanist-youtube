@@ -157,6 +157,71 @@
       "delete": { "operationId": "RemoveCookies", "responses": { "204": { "description": "Removed" } } }
     },
     "/me": { "get": { "operationId": "Me", "summary": "The user's own settings.", "responses": { "200": { "description": "The user's settings", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MyYouTube" } } } } } } },
+    "/me/terms": {
+      "post": {
+        "operationId": "AcceptTerms",
+        "summary": "Accepts the responsible use notice. `me` says whether it was (`termsAccepted`); reading `me` before accepting starts its reading time (8 seconds).",
+        "responses": {
+          "200": { "description": "Accepted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MyYouTube" } } } },
+          "409": { "description": "terms_too_soon: it was not on screen long enough to be read" }
+        }
+      }
+    },
+    "/explore/search": {
+      "get": {
+        "operationId": "ExploreSearch",
+        "summary": "Searches YouTube Music. Each item says whether the user already has it (`inLibrary`; for songs, `owned` lists the copies).",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string", "maxLength": 200 } },
+          { "name": "kind", "in": "query", "description": "`all` (artists, songs and albums together), `songs`, `albums`, `artists`, `videos` or `playlists`.", "schema": { "type": "string", "default": "all" } },
+          { "name": "language", "in": "query", "description": "The language YouTube Music answers in (the browser's when left out).", "schema": { "type": "string" } },
+          { "name": "country", "in": "query", "description": "Two letters; `ZZ` is the world. The United States when left out.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Sections", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MusicSection" } } } } },
+          "502": { "description": "explore_failed" },
+          "503": { "description": "blocked_by_youtube" }
+        }
+      }
+    },
+    "/explore/artist/{id}": {
+      "get": {
+        "operationId": "ExploreArtist",
+        "summary": "An artist's page: their songs, albums, singles, videos and the artists their fans also like.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "The page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MusicArtistPage" } } } } }
+      }
+    },
+    "/explore/album/{id}": {
+      "get": {
+        "operationId": "ExploreAlbum",
+        "summary": "An album's list (`url`), to inspect and download like a pasted album.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Its list", "content": { "application/json": { "schema": { "type": "object", "properties": { "url": { "type": "string" } } } } } } }
+      }
+    },
+    "/explore/new-releases": {
+      "get": {
+        "operationId": "ExploreNewReleases",
+        "summary": "The albums and singles just out, in the country asked for.",
+        "responses": { "200": { "description": "Albums and singles", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MusicItem" } } } } } }
+      }
+    },
+    "/explore/charts": {
+      "get": {
+        "operationId": "ExploreCharts",
+        "summary": "A country's charts: its lists of the most played and its most heard artists, and the countries there are charts of.",
+        "responses": { "200": { "description": "Charts", "content": { "application/json": { "schema": { "type": "object", "properties": { "country": { "type": "string" }, "countries": { "type": "array", "items": { "type": "string" } }, "sections": { "type": "array", "items": { "$ref": "#/components/schemas/MusicSection" } } } } } } } }
+      }
+    },
+    "/explore/my-artists": {
+      "get": {
+        "operationId": "ExploreMyArtists",
+        "summary": "This year's and last year's albums and singles by the 20 artists with the most songs in the user's libraries, without those they have. Kept 6 hours; `refresh` asks again.",
+        "parameters": [{ "name": "refresh", "in": "query", "schema": { "type": "boolean" } }],
+        "responses": { "200": { "description": "The news", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/MusicItem" } }, "artists": { "type": "array", "items": { "type": "string" } }, "checkedAt": { "type": "string", "format": "date-time" } } } } } } }
+      }
+    },
     "/me/preferences": {
       "put": {
         "operationId": "SetMyPreferences",
@@ -211,7 +276,58 @@
         "required": ["hasCookies", "playWhenDone"],
         "properties": {
           "hasCookies": { "type": "boolean", "description": "The user has YouTube cookies of their own, used for their links instead of the server's." },
-          "playWhenDone": { "type": "boolean", "description": "The app asks the player to play each song as it is added to the library (arcanist:play)." }
+          "playWhenDone": { "type": "boolean", "description": "The app asks the player to play each song as it is added to the library (arcanist:play)." },
+          "termsAccepted": { "type": "boolean", "description": "The user accepted the responsible use notice; until then the app shows it first (me/terms)." }
+        }
+      },
+      "OwnedCopy": {
+        "type": "object",
+        "description": "A copy of a song the user already has: the same name (without what says which pressing or video it is) and artist, on any album.",
+        "properties": {
+          "trackId": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "artist": { "type": "string" },
+          "album": { "type": "string" },
+          "year": { "type": ["integer", "null"] },
+          "durationMs": { "type": "integer" },
+          "artworkId": { "type": ["string", "null"], "format": "uuid" },
+          "format": { "type": ["string", "null"] },
+          "lossless": { "type": "boolean" },
+          "libraries": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "MusicItem": {
+        "type": "object",
+        "description": "Something found on YouTube Music. `url` is the link to inspect (songs, videos, playlists); albums are opened with explore/album, artists with explore/artist.",
+        "properties": {
+          "kind": { "enum": ["SONG", "VIDEO", "ALBUM", "ARTIST", "PLAYLIST"] },
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "artists": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "id": { "type": ["string", "null"] } } } },
+          "album": { "type": ["string", "null"] },
+          "albumId": { "type": ["string", "null"] },
+          "year": { "type": ["integer", "null"] },
+          "duration": { "type": ["number", "null"] },
+          "thumbnail": { "type": ["string", "null"], "description": "Through this server (signed link)." },
+          "url": { "type": ["string", "null"] },
+          "label": { "type": ["string", "null"], "description": "How YouTube Music calls it (Single, EP, Album…), in the language asked." },
+          "detail": { "type": ["string", "null"] },
+          "inLibrary": { "type": "boolean" },
+          "owned": { "type": ["array", "null"], "items": { "$ref": "#/components/schemas/OwnedCopy" } }
+        }
+      },
+      "MusicSection": {
+        "type": "object",
+        "properties": { "title": { "type": "string" }, "items": { "type": "array", "items": { "$ref": "#/components/schemas/MusicItem" } } }
+      },
+      "MusicArtistPage": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "thumbnail": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "sections": { "type": "array", "items": { "$ref": "#/components/schemas/MusicSection" } }
         }
       },
       "Settings": {
@@ -263,7 +379,8 @@
           "entries": { "type": ["array", "null"], "items": { "$ref": "#/components/schemas/LinkEntry" } },
           "nextCursor": { "type": ["string", "null"] },
           "truncated": { "type": "boolean", "description": "A mix, cut to its first 50 songs." },
-          "inLibrary": { "type": "boolean" }
+          "inLibrary": { "type": "boolean", "description": "Downloaded here before, or the same song (name and artist, any album) is in the user's libraries." },
+          "owned": { "type": ["array", "null"], "items": { "$ref": "#/components/schemas/OwnedCopy" }, "description": "For a video: the copies of its song the user has." }
         }
       },
       "DownloadRequest": {

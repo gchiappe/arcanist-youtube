@@ -483,8 +483,14 @@ public sealed class YouTubeTests : IAsyncDisposable
         await StartAsync();
 
         var page = await _admin.GetFromJsonAsync<JsonElement>("/rest/v1/extensions/youtube/admin?language=es", ArcanistFactory.Json, Cancel);
-        Assert.Equal(["tools", "settings", "cookies", "legal"], page.GetProperty("sections").EnumerateArray().Select(s => s.GetProperty("id").GetString()));
-        Assert.Equal("Herramientas", page.GetProperty("sections")[0].GetProperty("title").GetString());
+        // The responsible use notice first, until this administrator accepts it; not before it could be read.
+        Assert.Equal(["terms", "tools", "settings", "cookies"], page.GetProperty("sections").EnumerateArray().Select(s => s.GetProperty("id").GetString()));
+        Assert.Equal(("Uso responsable", "Herramientas"), (page.GetProperty("sections")[0].GetProperty("title").GetString(),
+            page.GetProperty("sections")[1].GetProperty("title").GetString()));
+        var tooSoon = await _admin.PostAsJsonAsync("/rest/v1/extensions/youtube/admin/actions/acceptTerms", new { values = new { } }, ArcanistFactory.Json, Cancel);
+        Assert.False((await tooSoon.Content.ReadFromJsonAsync<JsonElement>(ArcanistFactory.Json, Cancel)).GetProperty("ok").GetBoolean());
+        Assert.False((await GetAsync(_admin, "me")).GetProperty("termsAccepted").GetBoolean());
+        Assert.Equal("terms_too_soon", (await SendAsync(_admin, HttpMethod.Post, "me/terms")).Body.GetProperty("code").GetString());
         // Deno is missing here: the panel offers to install it right after the extension starts.
         var setup = page.GetProperty("setup");
         Assert.Equal("install", setup.GetProperty("action").GetString());
@@ -656,5 +662,100 @@ public sealed class YouTubeTests : IAsyncDisposable
             .Concat(Directory.GetFiles(_music, "*.m4a", SearchOption.AllDirectories)));
         Assert.Contains(Calls(), call => call.Contains("height<=720", StringComparison.Ordinal));
         Assert.DoesNotContain(Calls(), call => call.Contains("height<=1080", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_song_the_user_has_on_another_album_is_said_before_it_is_brought_again()
+    {
+        Directory.CreateDirectory(Path.Combine(_music, "Sabrina Carpenter"));
+        AudioFixtures.WriteWav(Path.Combine(_music, "Sabrina Carpenter", "02 Espresso.wav"), 7,
+            new FixtureTags(Title: "Espresso", Artist: "Sabrina Carpenter", Album: "Short n' Sweet", AlbumArtist: "Sabrina Carpenter"));
+        // The same song as a music video (YouTube names no album, or another one), and a live performance of it.
+        Video("espresso001", "Sabrina Carpenter - Espresso (Official Video)", "SabrinaCarpenterVEVO", 7);
+        Video("espressoliv", "Sabrina Carpenter - Espresso (Live)", "SabrinaCarpenterVEVO", 8);
+        await StartAsync();
+
+        var preview = await GetAsync(_admin, "inspect?url=" + Uri.EscapeDataString("https://www.youtube.com/watch?v=espresso001"));
+        Assert.True(preview.GetProperty("inLibrary").GetBoolean());
+        var copy = Assert.Single(preview.GetProperty("owned").EnumerateArray());
+        Assert.Equal(("Espresso", "Short n' Sweet", "Music", true), (copy.GetProperty("title").GetString(), copy.GetProperty("album").GetString(),
+            copy.GetProperty("libraries")[0].GetString(), copy.GetProperty("lossless").GetBoolean()));
+
+        // A live performance is another song.
+        var live = await GetAsync(_admin, "inspect?url=" + Uri.EscapeDataString("https://www.youtube.com/watch?v=espressoliv"));
+        Assert.False(live.GetProperty("inLibrary").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, live.GetProperty("owned").ValueKind);
+    }
+
+    [Fact]
+    public async Task YouTube_Music_is_explored_with_what_the_user_has_marked_and_the_news_of_their_artists()
+    {
+        await using var music = await FakeYouTubeMusic.StartAsync();
+        const string Artist = "MUSIC_PAGE_TYPE_ARTIST", Album = "MUSIC_PAGE_TYPE_ALBUM";
+        var year = DateTime.UtcNow.Year.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        music.Searches["songs:band"] = FakeYouTubeMusic.Contents(FakeYouTubeMusic.Shelf("Songs",
+            FakeYouTubeMusic.Song("songvideo01", "Song (Remastered 2011)", "Band", "UCband", "Album", "MPREb_album", "0:02"),
+            FakeYouTubeMusic.Song("newvideo001", "Brand New", "Band", "UCband", "New Album", "MPREb_new", "3:10")));
+        music.Searches["albums:band"] = FakeYouTubeMusic.Contents(FakeYouTubeMusic.Shelf("Albums",
+            FakeYouTubeMusic.PageRow("Album", "MPREb_album", Album, FakeYouTubeMusic.Run("Album"), FakeYouTubeMusic.Run(" • "),
+                FakeYouTubeMusic.Run("Band", "UCband", Artist), FakeYouTubeMusic.Run(" • "), FakeYouTubeMusic.Run("2010"))));
+        music.Searches["artists:band"] = FakeYouTubeMusic.Contents(FakeYouTubeMusic.Shelf("Artists",
+            FakeYouTubeMusic.PageRow("Band", "UCband", Artist, FakeYouTubeMusic.Run("Artist"), FakeYouTubeMusic.Run(" • "), FakeYouTubeMusic.Run("1.2M monthly listeners")),
+            FakeYouTubeMusic.PageRow("Band Tribute", "UCother", Artist, FakeYouTubeMusic.Run("Artist"))));
+        // The search "New from your artists" makes for the library's artist, by its name.
+        music.Searches["artists:Band"] = music.Searches["artists:band"].DeepClone().AsObject();
+        music.Pages["UCband"] = new JsonObject
+        {
+            ["header"] = new JsonObject { ["musicImmersiveHeaderRenderer"] = new JsonObject { ["title"] = new JsonObject { ["runs"] = new JsonArray(FakeYouTubeMusic.Run("Band")) } } },
+            ["contents"] = new JsonArray(
+                FakeYouTubeMusic.Carousel("Albums",
+                    FakeYouTubeMusic.Card("New Album", "MPREb_new", Album, FakeYouTubeMusic.Run(year)),
+                    FakeYouTubeMusic.Card("Album", "MPREb_album", Album, FakeYouTubeMusic.Run(year))),
+                FakeYouTubeMusic.Carousel("Singles", FakeYouTubeMusic.Card("Song", "MPREb_single", Album, FakeYouTubeMusic.Run("Single"),
+                    FakeYouTubeMusic.Run(" • "), FakeYouTubeMusic.Run(year))),
+                FakeYouTubeMusic.Carousel("Fans also like", FakeYouTubeMusic.Card("Other Band", "UCotherband", Artist, FakeYouTubeMusic.Run("900K monthly listeners")))),
+        };
+        music.Pages["MPREb_new"] = new JsonObject { ["microformat"] = new JsonObject { ["playlistId"] = "OLAK5uy_newalbum123" } };
+
+        Directory.CreateDirectory(Path.Combine(_music, "Band"));
+        AudioFixtures.WriteWav(Path.Combine(_music, "Band", "01 Song.wav"), 7, new FixtureTags(Title: "Song", Artist: "Band", Album: "Album", AlbumArtist: "Band"));
+        await StartAsync(new Dictionary<string, string?> { ["Arcanist:Extensions:youtube:MusicApiUrl"] = music.Url });
+
+        // A search of everything: artists, songs and albums, each marked when the user has it (a remaster is the same song).
+        var sections = await GetAsync(_admin, "explore/search?q=band&language=es&country=pe");
+        Assert.Equal(["artists", "songs", "albums"], sections.EnumerateArray().Select(s => s.GetProperty("title").GetString()));
+        var songs = sections[1].GetProperty("items");
+        Assert.Equal(("SONG", "Song (Remastered 2011)", true, "Album"), (songs[0].GetProperty("kind").GetString(), songs[0].GetProperty("title").GetString(),
+            songs[0].GetProperty("inLibrary").GetBoolean(), songs[0].GetProperty("owned")[0].GetProperty("album").GetString()));
+        Assert.Equal(("https://music.youtube.com/watch?v=newvideo001", false, 190.0), (songs[1].GetProperty("url").GetString(),
+            songs[1].GetProperty("inLibrary").GetBoolean(), songs[1].GetProperty("duration").GetDouble()));
+        var album = sections[2].GetProperty("items")[0];
+        Assert.Equal(("ALBUM", true, 2010), (album.GetProperty("kind").GetString(), album.GetProperty("inLibrary").GetBoolean(), album.GetProperty("year").GetInt32()));
+        Assert.Equal("1.2M monthly listeners", sections[0].GetProperty("items")[0].GetProperty("detail").GetString());
+        // In the language and country asked for.
+        Assert.Contains(music.Calls, call => call.Contains("\"hl\":\"es\"", StringComparison.Ordinal) && call.Contains("\"gl\":\"PE\"", StringComparison.Ordinal));
+
+        // The artist's page: their albums (theirs, though the cards do not say), singles and the artists their fans like.
+        var page = await GetAsync(_admin, "explore/artist/UCband?country=PE");
+        Assert.Equal("Band", page.GetProperty("name").GetString());
+        Assert.Equal(["Albums", "Singles", "Fans also like"], page.GetProperty("sections").EnumerateArray().Select(s => s.GetProperty("title").GetString()));
+        var albums = page.GetProperty("sections")[0].GetProperty("items");
+        Assert.Equal([false, true], albums.EnumerateArray().Select(a => a.GetProperty("inLibrary").GetBoolean()));
+        // A single of a song the user has on an album: they have it.
+        Assert.True(page.GetProperty("sections")[1].GetProperty("items")[0].GetProperty("inLibrary").GetBoolean());
+
+        // An album opens as its list, which the app inspects like a pasted album.
+        Assert.Equal("https://music.youtube.com/playlist?list=OLAK5uy_newalbum123", (await GetAsync(_admin, "explore/album/MPREb_new")).GetProperty("url").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendAsync(_admin, HttpMethod.Get, "explore/album/not-an-album")).Status);
+
+        // New from the user's artists: this year's releases they do not have.
+        var news = await GetAsync(_admin, "explore/my-artists?country=PE");
+        Assert.Equal(["Band"], news.GetProperty("artists").EnumerateArray().Select(a => a.GetString()));
+        Assert.Equal(["New Album"], news.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("title").GetString()));
+
+        // Only users who may upload.
+        await _factory.CreateUserAsync("listener");
+        var listener = await _factory.CreateAuthenticatedClientAsync("listener");
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(listener, HttpMethod.Get, "explore/search?q=band")).Status);
     }
 }

@@ -114,7 +114,7 @@ public static class Api
         api.MapGet("/status", StatusAsync);
 
         api.MapGet("/inspect", (string? url, string? tab, string? after, AccessGuard guard, Inspector inspector, CancellationToken ct) =>
-            inspector.InspectAsync(guard.Permission(Permissions.Upload).UserId, url, tab, after, ct));
+            inspector.InspectAsync(guard.Permission(Permissions.Upload), url, tab, after, ct));
 
         api.MapPost("/downloads", DownloadAsync);
 
@@ -132,6 +132,50 @@ public static class Api
 
         // Many songs' music videos as one download, each next to its song.
         api.MapPost("/video-downloads", VideoDownloadsAsync);
+
+        // Exploring YouTube Music: what the user picks is inspected and downloaded like a pasted link.
+        var explore = api.MapGroup("/explore");
+        explore.MapGet("/search", async (string q, string? kind, string? language, string? country, HttpContext context, AccessGuard guard,
+            YouTubeMusic music, Explore marks, CancellationToken ct) =>
+        {
+            var access = guard.Permission(Permissions.Upload);
+            var sections = await music.SearchAsync(q, kind ?? "all", Language(language, context), Country(country), ct);
+            return await marks.MarkAsync(access, sections, ct);
+        });
+
+        explore.MapGet("/artist/{id}", async (string id, string? language, string? country, HttpContext context, AccessGuard guard, YouTubeMusic music,
+            Explore marks, CancellationToken ct) =>
+        {
+            var access = guard.Permission(Permissions.Upload);
+            var page = await music.ArtistAsync(id, Language(language, context), Country(country), ct);
+            return page with { Sections = await marks.MarkAsync(access, page.Sections, ct) };
+        });
+
+        explore.MapGet("/album/{id}", (string id, string? language, string? country, HttpContext context, AccessGuard guard, YouTubeMusic music,
+            CancellationToken ct) =>
+        {
+            guard.Permission(Permissions.Upload);
+            return music.AlbumAsync(id, Language(language, context), Country(country), ct);
+        });
+
+        explore.MapGet("/new-releases", async (string? language, string? country, HttpContext context, AccessGuard guard, YouTubeMusic music,
+            Explore marks, CancellationToken ct) =>
+        {
+            var access = guard.Permission(Permissions.Upload);
+            return await marks.MarkAsync(access, await music.NewReleasesAsync(Language(language, context), Country(country), ct), ct);
+        });
+
+        explore.MapGet("/charts", async (string? language, string? country, HttpContext context, AccessGuard guard, YouTubeMusic music, Explore marks,
+            CancellationToken ct) =>
+        {
+            var access = guard.Permission(Permissions.Upload);
+            var charts = await music.ChartsAsync(Language(language, context), Country(country), ct);
+            return charts with { Sections = await marks.MarkAsync(access, charts.Sections, ct) };
+        });
+
+        explore.MapGet("/my-artists", (string? language, string? country, bool? refresh, HttpContext context, AccessGuard guard, Explore marks,
+                CancellationToken ct) =>
+            marks.MyArtistsAsync(guard.Permission(Permissions.Upload), Language(language, context), Country(country), refresh == true, ct));
 
         // The songs whose tracks were still unknown are looked up first (their library may have been scanned since).
         api.MapGet("/downloads", async (AccessGuard guard, DownloadQueue queue, CancellationToken ct) =>
@@ -228,17 +272,29 @@ public static class Api
             return Results.NoContent();
         });
 
-        api.MapGet("/me", (AccessGuard guard, CookieStore cookies, UserPreferences preferences) =>
+        api.MapGet("/me", (AccessGuard guard, CookieStore cookies, UserPreferences preferences, ResponsibleUse terms) =>
         {
             var user = guard.Permission(Permissions.Upload).UserId;
-            return new MyYouTube(cookies.PresentFor(user), preferences.Of(user).PlayWhenDone);
+            // Not accepted yet: the app shows the notice now, and its reading time starts.
+            if (!terms.Accepted(user))
+                terms.Shown(user);
+            return new MyYouTube(cookies.PresentFor(user), preferences.Of(user).PlayWhenDone, terms.Accepted(user));
         });
 
-        api.MapPut("/me/preferences", (MyPreferences input, AccessGuard guard, CookieStore cookies, UserPreferences preferences) =>
+        // The responsible use notice, read: 409 terms_too_soon when it was not on screen long enough to be read.
+        api.MapPost("/me/terms", (AccessGuard guard, CookieStore cookies, UserPreferences preferences, ResponsibleUse terms) =>
         {
             var user = guard.Permission(Permissions.Upload).UserId;
-            preferences.Save(user, new UserPreference(input.PlayWhenDone));
-            return new MyYouTube(cookies.PresentFor(user), input.PlayWhenDone);
+            if (!terms.Accept(user))
+                throw new ExtensionException(ErrorCodes.TermsTooSoon, 409);
+            return new MyYouTube(cookies.PresentFor(user), preferences.Of(user).PlayWhenDone, true);
+        });
+
+        api.MapPut("/me/preferences", (MyPreferences input, AccessGuard guard, CookieStore cookies, UserPreferences preferences, ResponsibleUse terms) =>
+        {
+            var user = guard.Permission(Permissions.Upload).UserId;
+            preferences.Save(user, preferences.Of(user) with { PlayWhenDone = input.PlayWhenDone });
+            return new MyYouTube(cookies.PresentFor(user), input.PlayWhenDone, terms.Accepted(user));
         });
 
         // A user's own cookies (cookies.txt, as plain text), used for their links instead of the server's; never returned.
@@ -386,6 +442,17 @@ public static class Api
             with { VideoFor = l.Item.TrackId }).ToList();
         return queue.Add(batch with { Items = items });
     }
+
+    /// <summary>The language YouTube Music answers in: the one asked for, else the browser's, else English.</summary>
+    private static string Language(string? language, HttpContext context)
+    {
+        var wanted = language ?? context.Request.Headers.AcceptLanguage.ToString().Split(',', ';').FirstOrDefault();
+        return wanted?.Trim() is { Length: >= 2 and <= 10 } code && code.All(c => char.IsAsciiLetter(c) || c == '-') ? code : "en";
+    }
+
+    /// <summary>The country of the charts and releases: two letters (<c>ZZ</c> is the world), the United States if none.</summary>
+    private static string Country(string? country) =>
+        country is { Length: 2 } code && code.All(char.IsAsciiLetter) ? code.ToUpperInvariant() : "US";
 
     private static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim()[..Math.Min(text.Trim().Length, 256)];
 

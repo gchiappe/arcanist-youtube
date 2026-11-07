@@ -26,15 +26,26 @@ public sealed class YouTubeExtension : IArcanistExtension
             provider.GetRequiredService<ILogger<ToolManager>>()));
         services.AddSingleton<CookieStore>();
         services.AddSingleton<UserPreferences>();
+        services.AddSingleton<ResponsibleUse>();
         services.AddKeyedScoped<IExtensionAdminPage, YouTubeAdminPage>(context.Id);
         services.AddSingleton<YtDlp>();
         services.AddSingleton<Images>();
+        services.AddSingleton<OwnedSongs>();
         services.AddScoped<Inspector>();
+        services.AddSingleton(provider => new YouTubeMusic(provider.GetRequiredService<IHttpClientFactory>(), context.Configuration,
+            provider.GetRequiredService<Images>(), provider.GetRequiredService<ILogger<YouTubeMusic>>()));
+        services.AddSingleton<Explore>();
         services.AddScoped<VideoSearch>();
         services.AddScoped<SongList>();
         services.AddSingleton<DownloadQueue>();
         services.AddHostedService(provider => provider.GetRequiredService<DownloadQueue>());
         services.AddHostedService<ToolUpdater>();
+        services.AddHttpClient(YouTubeMusic.HttpClientName, client =>
+        {
+            // As YouTube Music's own web app: it answers other clients with less.
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36");
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
         services.AddHttpClient(ToolManager.HttpClientName, client =>
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Arcanist-YouTube/" + (typeof(YouTubeExtension).Assembly.GetName().Version?.ToString(3) ?? "0"));

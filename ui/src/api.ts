@@ -92,7 +92,71 @@ export interface LinkPreview {
   nextCursor?: string;
   truncated: boolean;
   inLibrary: boolean;
+  /** For a video: the copies of its song the user already has (on any album). */
+  owned?: OwnedCopy[] | null;
 }
+
+/** A copy of a song the user already has. */
+export interface OwnedCopy {
+  trackId: string;
+  title: string;
+  artist: string;
+  album: string;
+  year: number | null;
+  durationMs: number;
+  artworkId: string | null;
+  format: string | null;
+  lossless: boolean;
+  libraries: string[];
+}
+
+export type MusicItemKind = "SONG" | "VIDEO" | "ALBUM" | "ARTIST" | "PLAYLIST";
+
+/** Something found on YouTube Music. */
+export interface MusicItem {
+  kind: MusicItemKind;
+  id: string;
+  title: string;
+  artists: { name: string; id: string | null }[];
+  album: string | null;
+  albumId: string | null;
+  year: number | null;
+  duration: number | null;
+  thumbnail: string | null;
+  /** The link to inspect (song, video, playlist); null for an album or an artist. */
+  url: string | null;
+  label: string | null;
+  detail: string | null;
+  inLibrary: boolean;
+  owned?: OwnedCopy[] | null;
+}
+
+export interface MusicSection {
+  title: string;
+  items: MusicItem[];
+}
+
+export interface MusicArtistPage {
+  id: string;
+  name: string;
+  thumbnail: string | null;
+  description: string | null;
+  sections: MusicSection[];
+}
+
+export interface MusicCharts {
+  country: string;
+  countries: string[];
+  sections: MusicSection[];
+}
+
+export interface MyArtistsNews {
+  items: MusicItem[];
+  artists: string[];
+  checkedAt: string;
+}
+
+export type SearchKind = "all" | "songs" | "albums" | "artists" | "videos" | "playlists";
 
 /** The user's own settings. */
 export interface MyYouTube {
@@ -100,6 +164,8 @@ export interface MyYouTube {
   hasCookies: boolean;
   /** Play each song as it is added to the library. */
   playWhenDone: boolean;
+  /** The responsible use notice was accepted; until then the app shows it first. */
+  termsAccepted: boolean;
 }
 
 export interface DownloadItem {
@@ -299,7 +365,22 @@ export const api = {
   setPreferences: (playWhenDone: boolean) => call<MyYouTube>("me/preferences", { method: "PUT", ...json({ playWhenDone }) }),
   saveMyCookies: (text: string) => call<MyYouTube>("me/cookies", { method: "PUT", body: text, headers: { "Content-Type": "text/plain" } }),
   removeMyCookies: () => call<MyYouTube>("me/cookies", { method: "DELETE" }),
+  acceptTerms: () => call<MyYouTube>("me/terms", { method: "POST" }),
+  explore: {
+    search: (q: string, kind: SearchKind, country: string) => call<MusicSection[]>(`explore/search?${place({ q, kind }, country)}`),
+    artist: (id: string, country: string) => call<MusicArtistPage>(`explore/artist/${encodeURIComponent(id)}?${place({}, country)}`),
+    album: (id: string, country: string) => call<{ url: string }>(`explore/album/${encodeURIComponent(id)}?${place({}, country)}`),
+    newReleases: (country: string) => call<MusicItem[]>(`explore/new-releases?${place({}, country)}`),
+    charts: (country: string) => call<MusicCharts>(`explore/charts?${place({}, country)}`),
+    myArtists: (country: string, refresh = false) =>
+      call<MyArtistsNews>(`explore/my-artists?${place(refresh ? { refresh: "true" } : {}, country)}`),
+  },
 };
+
+/** The query of an explore call: YouTube Music answers in the app's language, for the country chosen. */
+function place(values: Record<string, string>, country: string): URLSearchParams {
+  return new URLSearchParams({ ...values, language: host.language, country });
+}
 
 /**
  * Follows the user's downloads as they change (server-sent events, read with fetch so the token can go in a
